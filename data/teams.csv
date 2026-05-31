@@ -1,0 +1,49 @@
+team_id,team_name,group,fifa_ranking
+MEX,Mexico,A,15
+KOR,South Korea,A,22
+RSA,South Africa,A,63
+CZE,Czechia,A,40
+CAN,Canada,B,30
+SUI,Switzerland,B,17
+QAT,Qatar,B,58
+BIH,Bosnia & Herzegovina,B,65
+BRA,Brazil,C,5
+MAR,Morocco,C,11
+SCO,Scotland,C,43
+HAI,Haiti,C,91
+USA,United States,D,14
+AUS,Australia,D,26
+PAR,Paraguay,D,40
+TUR,Türkiye,D,22
+GER,Germany,E,9
+ECU,Ecuador,E,23
+CIV,Côte d'Ivoire,E,34
+CUW,Curaçao,E,83
+NED,Netherlands,F,7
+JPN,Japan,F,18
+TUN,Tunisia,F,44
+SWE,Sweden,F,38
+BEL,Belgium,G,8
+IRN,IR Iran,G,20
+EGY,Egypt,G,29
+NZL,New Zealand,G,97
+ESP,Spain,H,1
+URU,Uruguay,H,16
+KSA,Saudi Arabia,H,58
+CPV,Cape Verde,H,73
+FRA,France,I,3
+SEN,Senegal,I,19
+NOR,Norway,I,31
+IRQ,Iraq,I,57
+ARG,Argentina,J,2
+AUT,Austria,J,24
+ALG,Algeria,J,28
+JOR,Jordan,J,64
+POR,Portugal,K,6
+COL,Colombia,K,13
+UZB,Uzbekistan,K,50
+COD,DR Congo,K,46
+ENG,England,L,4
+CRO,Croatia,L,10
+PAN,Panama,L,33
+GHA,Ghana,L,55

@@ -1,0 +1,178 @@
+# FIFA 2026 Group-Stage Data Schema
+
+Six CSVs, all CSVs join on `team_id` or `venue_id`.
+
+---
+
+## 1. `matches.csv`
+
+| Column | Type | Description |
+|---|---|---|
+| `match_id` | int | Match number in ascending kickoff order (1–72) |
+| `group` | str | Group letter (A–L) |
+| `round` | int | Match round within group (1, 2, or 3) |
+| `team_a_id` | str | Team ID of first team (joins → `teams.csv`) |
+| `team_b_id` | str | Team ID of second team (joins → `teams.csv`) |
+| `venue_id` | str | Venue identifier (joins → `venues.csv`) |
+| `date` | date | Match date (YYYY-MM-DD) |
+| `kickoff_local` | time | Kickoff time in venue local time (HH:MM) |
+
+---
+
+## 2. `venues.csv`
+
+| Column | Type | Description |
+|---|---|---|
+| `venue_id` | str | Unique venue identifier (e.g. `DAL`, `NYC`, `MEX`) |
+| `name` | str | Stadium name |
+| `city` | str | Host city |
+| `country` | str | Host country (`USA`, `CAN`, `MEX`) |
+| `lat` | float | Latitude (decimal degrees) |
+| `lon` | float | Longitude (decimal degrees) |
+| `utc_offset_june` | int | UTC offset during June (accounts for daylight saving) |
+
+---
+
+## 3. `teams.csv`
+
+| Column | Type | Description |
+|---|---|---|
+| `team_id` | str | Unique team identifier (e.g. `BRA`, `GER`, `MEX`) |
+| `team_name` | str | Full team name |
+| `group` | str | Assigned group (A–L) |
+| `fifa_ranking` | int | FIFA Men's World Ranking (lower = stronger) |
+
+---
+
+## 4. `base_camps.csv`
+
+| Column | Type | Description |
+|---|---|---|
+| `team_id` | str | Team identifier (joins → `teams.csv`) |
+| `city` | str | Confirmed base camp city |
+| `country` | str | Country of base camp city |
+| `lat` | float | City-centre latitude (decimal degrees) |
+| `lon` | float | City-centre longitude (decimal degrees) |
+| `utc_offset_june` | int | UTC offset during June (accounts for DST; sub-hour offsets rounded to nearest integer) |
+
+---
+
+## 5. `weather.csv` — 6,528 rows
+
+Hourly temperature for every venue across the full group-stage window (June 11–27, inclusive). 16 venues × 17 days × 24 hours = 6,528 rows. Query by `venue_id` + `datetime` at match kickoff time (or average over match window).
+
+| Column | Type | Description |
+|---|---|---|
+| `venue_id` | str | Venue identifier (joins → `venues.csv`) |
+| `datetime` | datetime | Hourly UTC timestamp in 2026 (YYYY-MM-DD HH:MM) |
+| `temperature_c` | float | 3-year average air temperature at 2 m height (°C), rounded to 1 decimal |
+
+> **Data origin:** Fetched by `create_weather.py` via the Open-Meteo Historical Weather API (`https://archive-api.open-meteo.com/v1/archive`, `temperature_2m` variable). Fetches June 11–27 for 2022, 2023, and 2024, then averages the three years hour-by-hour to produce a stable seasonal baseline. Results are stored under 2026 UTC timestamps. This approach does not require re-running closer to match dates.
+
+---
+
+## 6. `broadcast_markets.csv`
+
+One row per country; can be extended to other major football markets.
+
+| Column | Type | Description |
+|---|---|---|
+| `country` | str | Country name |
+| `team_id` | str | Corresponding team ID if a qualified nation; `null` otherwise |
+| `primetime_start_local` | time | Start of prime-time window in country's local time (HH:MM) |
+| `primetime_end_local` | time | End of prime-time window in country's local time (HH:MM) |
+| `utc_offset_june` | int | Country's UTC offset during June (accounts for daylight saving) |
+| `audience_weight` | int | Population (or viewership estimate) used to weight broadcast value |
+
+---
+
+## Join Map
+
+```
+matches ──── venue_id ──────────────► venues
+matches ──── team_a_id / team_b_id ──► teams
+teams   ──── team_id ───────────────► base_camps
+venues  ──── venue_id + datetime ───► weather
+venues  ──── utc_offset_june ───────► broadcast_markets (prime-time conversion)
+broadcast_markets ── team_id ───────► teams (to link market to a qualified nation)
+```
+
+---
+
+## ID Legend
+
+### Venue IDs
+
+| `venue_id` | Stadium | City | Country |
+|---|---|---|---|
+| `ATL` | Mercedes-Benz Stadium | Atlanta | USA |
+| `BOS` | Gillette Stadium | Boston | USA |
+| `DAL` | AT&T Stadium | Dallas | USA |
+| `GDL` | Estadio Akron | Guadalajara | MEX |
+| `HOU` | NRG Stadium | Houston | USA |
+| `KC` | GEHA Field at Arrowhead Stadium | Kansas City | USA |
+| `LAX` | SoFi Stadium | Los Angeles | USA |
+| `MEX` | Estadio Azteca | Mexico City | MEX |
+| `MIA` | Hard Rock Stadium | Miami | USA |
+| `MTY` | Estadio BBVA | Monterrey | MEX |
+| `NYC` | MetLife Stadium | New York/New Jersey | USA |
+| `PHI` | Lincoln Financial Field | Philadelphia | USA |
+| `SFO` | Levi's Stadium | San Francisco Bay Area | USA |
+| `SEA` | Lumen Field | Seattle | USA |
+| `TOR` | BMO Field | Toronto | CAN |
+| `VAN` | BC Place | Vancouver | CAN |
+
+---
+
+### Team IDs
+
+| `team_id` | Team | Group |
+|---|---|---|
+| `ALG` | Algeria | J |
+| `ARG` | Argentina | J |
+| `AUS` | Australia | D |
+| `AUT` | Austria | J |
+| `BEL` | Belgium | G |
+| `BIH` | Bosnia & Herzegovina | B |
+| `BRA` | Brazil | C |
+| `CAN` | Canada | B |
+| `CIV` | Côte d'Ivoire | E |
+| `COD` | DR Congo | K |
+| `COL` | Colombia | K |
+| `CPV` | Cape Verde | H |
+| `CRO` | Croatia | L |
+| `CUW` | Curaçao | E |
+| `CZE` | Czechia | A |
+| `ECU` | Ecuador | E |
+| `EGY` | Egypt | G |
+| `ENG` | England | L |
+| `ESP` | Spain | H |
+| `FRA` | France | I |
+| `GER` | Germany | E |
+| `GHA` | Ghana | L |
+| `HAI` | Haiti | C |
+| `IRN` | IR Iran *(withdrew post-draw)* | G |
+| `IRQ` | Iraq | I |
+| `JOR` | Jordan | J |
+| `JPN` | Japan | F |
+| `KOR` | South Korea | A |
+| `KSA` | Saudi Arabia | H |
+| `MAR` | Morocco | C |
+| `MEX` | Mexico | A |
+| `NED` | Netherlands | F |
+| `NOR` | Norway | I |
+| `NZL` | New Zealand | G |
+| `PAN` | Panama | L |
+| `PAR` | Paraguay | D |
+| `POR` | Portugal | K |
+| `QAT` | Qatar | B |
+| `RSA` | South Africa | A |
+| `SCO` | Scotland | C |
+| `SEN` | Senegal | I |
+| `SUI` | Switzerland | B |
+| `SWE` | Sweden | F |
+| `TUN` | Tunisia | F |
+| `TUR` | Türkiye | D |
+| `URU` | Uruguay | H |
+| `USA` | United States | D |
+| `UZB` | Uzbekistan | K |

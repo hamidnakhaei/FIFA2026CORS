@@ -1,0 +1,17 @@
+venue_id,name,city,country,lat,lon,utc_offset_june
+ATL,Mercedes-Benz Stadium,Atlanta,USA,33.7554,-84.401,-4
+BOS,Gillette Stadium,Boston,USA,42.0909,-71.2643,-4
+DAL,AT&T Stadium,Dallas,USA,32.748,-97.0929,-5
+HOU,NRG Stadium,Houston,USA,29.6847,-95.4107,-5
+KC,GEHA Field at Arrowhead Stadium,Kansas City,USA,39.0489,-94.4839,-5
+LAX,SoFi Stadium,Los Angeles,USA,33.9535,-118.3392,-7
+MIA,Hard Rock Stadium,Miami,USA,25.958,-80.2389,-4
+NYC,MetLife Stadium,New York/New Jersey,USA,40.8135,-74.0745,-4
+PHI,Lincoln Financial Field,Philadelphia,USA,39.9008,-75.1675,-4
+SFO,Levi's Stadium,San Francisco Bay Area,USA,37.4033,-121.9694,-7
+SEA,Lumen Field,Seattle,USA,47.5952,-122.3316,-7
+TOR,BMO Field,Toronto,CAN,43.6332,-79.4192,-4
+VAN,BC Place,Vancouver,CAN,49.2767,-123.1115,-7
+GDL,Estadio Akron,Guadalajara,MEX,20.6464,-103.4677,-6
+MEX,Estadio Azteca,Mexico City,MEX,19.3029,-99.1505,-6
+MTY,Estadio BBVA,Monterrey,MEX,25.6691,-100.2437,-6
