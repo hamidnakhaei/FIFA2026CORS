@@ -30,6 +30,7 @@ Six CSVs, all CSVs join on `team_id` or `venue_id`.
 | `lat` | float | Latitude (decimal degrees) |
 | `lon` | float | Longitude (decimal degrees) |
 | `utc_offset_june` | int | UTC offset during June (accounts for daylight saving) |
+| `zone` | str | Geographic cluster for group-stage scheduling (`Western`, `Central`, or `Eastern`) |
 
 ---
 
@@ -100,24 +101,24 @@ broadcast_markets ── team_id ───────► teams (to link market 
 
 ### Venue IDs
 
-| `venue_id` | Stadium | City | Country |
-|---|---|---|---|
-| `ATL` | Mercedes-Benz Stadium | Atlanta | USA |
-| `BOS` | Gillette Stadium | Boston | USA |
-| `DAL` | AT&T Stadium | Dallas | USA |
-| `GDL` | Estadio Akron | Guadalajara | MEX |
-| `HOU` | NRG Stadium | Houston | USA |
-| `KC` | GEHA Field at Arrowhead Stadium | Kansas City | USA |
-| `LAX` | SoFi Stadium | Los Angeles | USA |
-| `MEX` | Estadio Azteca | Mexico City | MEX |
-| `MIA` | Hard Rock Stadium | Miami | USA |
-| `MTY` | Estadio BBVA | Monterrey | MEX |
-| `NYC` | MetLife Stadium | New York/New Jersey | USA |
-| `PHI` | Lincoln Financial Field | Philadelphia | USA |
-| `SFO` | Levi's Stadium | San Francisco Bay Area | USA |
-| `SEA` | Lumen Field | Seattle | USA |
-| `TOR` | BMO Field | Toronto | CAN |
-| `VAN` | BC Place | Vancouver | CAN |
+| `venue_id` | Stadium | City | Country | Zone |
+|---|---|---|---|---|
+| `ATL` | Mercedes-Benz Stadium | Atlanta | USA | Eastern |
+| `BOS` | Gillette Stadium | Boston | USA | Eastern |
+| `DAL` | AT&T Stadium | Dallas | USA | Central |
+| `GDL` | Estadio Akron | Guadalajara | MEX | Central |
+| `HOU` | NRG Stadium | Houston | USA | Central |
+| `KC` | GEHA Field at Arrowhead Stadium | Kansas City | USA | Central |
+| `LAX` | SoFi Stadium | Los Angeles | USA | Western |
+| `MEX` | Estadio Azteca | Mexico City | MEX | Central |
+| `MIA` | Hard Rock Stadium | Miami | USA | Eastern |
+| `MTY` | Estadio BBVA | Monterrey | MEX | Central |
+| `NYC` | MetLife Stadium | New York/New Jersey | USA | Eastern |
+| `PHI` | Lincoln Financial Field | Philadelphia | USA | Eastern |
+| `SFO` | Levi's Stadium | San Francisco Bay Area | USA | Western |
+| `SEA` | Lumen Field | Seattle | USA | Western |
+| `TOR` | BMO Field | Toronto | CAN | Eastern |
+| `VAN` | BC Place | Vancouver | CAN | Western |
 
 ---
 
