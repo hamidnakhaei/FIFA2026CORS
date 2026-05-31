@@ -59,15 +59,12 @@ Six CSVs, all CSVs join on `team_id` or `venue_id`.
 
 ## 5. `weather.csv` — 6,528 rows
 
-Hourly temperature for every venue across the full group-stage window (June 11–27, inclusive). 16 venues × 17 days × 24 hours = 6,528 rows. Query by `venue_id` + `datetime` at match kickoff time (or average over match window).
-
+Hourly temperature for every venue across the full group-stage window. Query by `venue_id` + `datetime` at match kickoff time (or average over match window).
 | Column | Type | Description |
 |---|---|---|
 | `venue_id` | str | Venue identifier (joins → `venues.csv`) |
 | `datetime` | datetime | Hourly UTC timestamp in 2026 (YYYY-MM-DD HH:MM) |
 | `temperature_c` | float | 3-year average air temperature at 2 m height (°C), rounded to 1 decimal |
-
-> **Data origin:** Fetched by `create_weather.py` via the Open-Meteo Historical Weather API (`https://archive-api.open-meteo.com/v1/archive`, `temperature_2m` variable). Fetches June 11–27 for 2022, 2023, and 2024, then averages the three years hour-by-hour to produce a stable seasonal baseline. Results are stored under 2026 UTC timestamps. This approach does not require re-running closer to match dates.
 
 ---
 
