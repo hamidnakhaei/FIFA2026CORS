@@ -11,7 +11,22 @@ from datetime import datetime
 import gurobipy as gp
 from gurobipy import GRB
 
-from config import DATA_DIR, KPI_WEIGHTS
+from config import (
+    DATA_DIR, KPI_WEIGHTS, FULL_BAN_TEAMS, VISA_BOND_TEAMS,
+    VISA_BOND_PENALTY, TEAM_PRIORITY_ORDER, OPTSIM_EPSILON, OPTSIM_DELTA,
+    OPTSIM_NO_IMPROVE_THRESHOLD,
+)
+
+# Map the four base-camp KPI families to their KPI_WEIGHTS keys.
+# The guard uses Lambda(K) = sum_k lambda_k * K_k / Kbar_k (Section 9.4):
+# weighted AND normalised, so raw travel (thousands of km) does not swamp
+# border-crossings (0-3) or altitude (single digits).
+KPI_FAMILY_TO_WEIGHT_KEY = {
+    'travel': 1.2,            # Intra-group travel dispersion
+    'jet_lag': 1.3,           # Circadian shift
+    'border_crossings': 1.4,  # Geographic dispersion / border crossings
+    'altitude': 2.4,          # Altitude disruption
+}
 from data_loader import DataLoader, load_data
 from parameter_builder import ParameterBuilder, build_parameters
 from model_builder_optsim import ModelBuilder as OptSimModelBuilder, build_model
@@ -54,6 +69,10 @@ class OptSimSolver:
         self.incumbent_camp_assignment = None
         self.incumbent_kpi_penalty = float('inf')
         self.kpi_history = []
+
+        # Per-KPI-family normalisation divisors (Kbar_k). Set from the
+        # baseline simulation so the weighted penalty is scale-free.
+        self.kpi_normalizers = None
     
     def load_data(self):
         """Load all input data."""
@@ -101,8 +120,16 @@ class OptSimSolver:
         if self.data_loader is None or self.parameters is None:
             raise RuntimeError("Data and parameters must be loaded first")
         
-        # Create simulator
-        self.simulator = CampSimulator(self.data_loader, self.parameters)
+        # Create simulator with the qualification/seeding priority order
+        # (Section 9.2: greedy "first come, first served" assignment) and
+        # the US entry restriction lists (Section 5.2).
+        self.simulator = CampSimulator(
+            self.data_loader, self.parameters,
+            team_priority_order=TEAM_PRIORITY_ORDER,
+            full_ban_teams=FULL_BAN_TEAMS,
+            visa_bond_teams=VISA_BOND_TEAMS,
+            visa_bond_penalty=VISA_BOND_PENALTY,
+        )
         print(f"  Initialized camp simulator")
         
         # Create surrogate model
@@ -153,6 +180,9 @@ class OptSimSolver:
         sys.stdout.flush()
         baseline_venue_assignment = self._extract_venue_assignment(baseline_schedule)
         baseline_camps, baseline_kpis = self.simulator.simulate(baseline_venue_assignment)
+        # Establish normalisers from the baseline BEFORE scoring, so the
+        # weighted penalty Lambda(K) is scale-free from iteration one.
+        self._set_normalizers_from_baseline(baseline_kpis)
         baseline_penalty = self._compute_kpi_penalty(baseline_kpis)
         
         # Set baseline as incumbent
@@ -218,7 +248,13 @@ class OptSimSolver:
                 'penalty': penalty,
                 'accepted': penalty <= improvement_threshold
             })
-            
+
+            # No-good cut (Section 9.4): forbid re-finding this exact venue
+            # assignment, so the next solve must explore a different schedule.
+            # Without this, a deterministic objective would return the same
+            # optimum every iteration and the loop would stall after one accept.
+            self._add_no_good_cut(candidate_schedule, iteration)
+
             # Check stopping criteria
             if no_improve_count >= no_improve_threshold:
                 print(f"\n  No accepted candidates in {no_improve_threshold} iterations - stopping")
@@ -229,37 +265,151 @@ class OptSimSolver:
         self.end_time = datetime.now()
         
         return self._extract_solution()
+
+    def _add_no_good_cut(self, schedule, iteration):
+        """
+        Add a no-good cut excluding the venue assignment of `schedule`.
+
+        For the set S1 of (match, venue) pairs that are 1 in this solution,
+        require sum_{(m,v) in S1} a[m][v] <= |S1| - 1, which makes at least
+        one match move to a different venue in any future solution.
+        """
+        a = self.model_builder.a
+        expr = gp.LinExpr()
+        count = 0
+        for match_id, info in schedule.items():
+            venue_id = info.get('venue_id')
+            if match_id in a and venue_id in a[match_id]:
+                expr.add(a[match_id][venue_id], 1.0)
+                count += 1
+        if count > 0:
+            self.model.addConstr(expr <= count - 1, f"no_good_cut_{iteration}")
+            self.model.update()
     
+    def _build_surrogate_objective(self, use_surrogate):
+        """
+        Build the upper-level objective as a LINEAR Gurobi expression over
+        the venue-assignment variables a[match][venue].
+
+        This is the piece that was previously missing: the fitted surrogate
+        (Section 9.3) is turned into actual optimisation pressure rather than
+        a constant-zero objective.
+
+        Construction. Every base-camp KPI is driven, to first order, by how
+        far each team's match venues are from the camps that team could
+        realistically use. For team i and venue s define the per-venue cost
+
+            c[i][s] = (min over eligible camps b of 2*dist(b,s)) + visa term,
+
+        i.e. the cheapest round-trip that placing a match of i at s could
+        incur once i picks its best eligible camp. This is a constant
+        (precomputed) and is LINEAR in a[m][s]. The surrogate objective is
+
+            sum_i  W_i * sum_{m in M_i} sum_s c[i][s] * a[m][s]
+
+        where W_i aggregates the fitted per-KPI surrogate weights and the
+        normalised KPI_WEIGHTS, so the objective tracks the simulated penalty
+        the guard actually measures.
+
+        When use_surrogate is False (baseline/initialisation) we use unit KPI
+        weights so the baseline still minimises travel-like cost rather than
+        returning an arbitrary feasible point.
+        """
+        dist = self.parameters['dist'] if isinstance(self.parameters, dict) \
+            else self.parameters.params['dist']
+
+        # US camps + per-team eligible camps (respecting the full ban) -------
+        us_camps = set(self.data_loader.get_camps_in_country("USA"))
+        all_camps = list(self.data_loader.camp_by_id.keys())
+
+        # Aggregate surrogate weight per KPI family. Combine the fitted
+        # surrogate magnitude with the analyst KPI_WEIGHTS so the in-MILP
+        # objective and the guard penalty are commensurate.
+        fam_weight = {}
+        for fam, wkey in KPI_FAMILY_TO_WEIGHT_KEY.items():
+            lam = KPI_WEIGHTS.get(wkey, 1.0)
+            if use_surrogate and self.surrogate is not None and self.surrogate.is_fitted:
+                # L1 magnitude of the fitted feature weights = how strongly
+                # this KPI responds to schedule features.
+                mag = float(np.sum(np.abs(self.surrogate.kpi_weights[fam])))
+            else:
+                mag = 1.0
+            norm = 1.0
+            if self.kpi_normalizers:
+                norm = max(self.kpi_normalizers.get(fam, 1.0), 1e-9)
+            fam_weight[fam] = lam * mag / norm
+
+        # Precompute per-team, per-venue cost c[i][s] -----------------------
+        venue_ids = [v['venue_id'] for _, v in self.data_loader.venues.iterrows()]
+        team_venue_cost = {}
+        for team_id in self.data_loader.team_by_id.keys():
+            eligible = list(self.data_loader.eligible_camps_by_team.get(team_id, all_camps))
+            if team_id in FULL_BAN_TEAMS:
+                eligible = [c for c in eligible if c not in us_camps]
+            team_venue_cost[team_id] = {}
+            for venue_id in venue_ids:
+                best = float('inf')
+                for camp_id in eligible:
+                    d = dist.get(camp_id, {}).get(venue_id, None)
+                    if d is None:
+                        continue
+                    cost = 2.0 * d
+                    # Soft visa-bond friction for US venues (Section 5.2):
+                    # a bond team sited away from the US still must travel to
+                    # any US match, so US venues carry the bond penalty.
+                    if team_id in VISA_BOND_TEAMS and venue_id in \
+                            self.data_loader.get_venues_in_country("USA"):
+                        cost += VISA_BOND_PENALTY
+                    best = min(best, cost)
+                team_venue_cost[team_id][venue_id] = 0.0 if best == float('inf') else best
+
+        # Assemble the linear objective over a[match][venue] ----------------
+        obj = gp.LinExpr()
+        a = self.model_builder.a
+        for team_id in self.data_loader.team_by_id.keys():
+            # One scalar weight per team: the travel/border/altitude families
+            # all scale with venue distance, so we fold them into a single
+            # multiplier. (Jet-lag is slot-driven and is left to the guard.)
+            W_i = (fam_weight['travel'] + fam_weight['border_crossings']
+                   + fam_weight['altitude'])
+            if W_i <= 0:
+                W_i = 1.0
+            matches = self.data_loader.get_team_matches(team_id)
+            for mdict in matches:
+                match_id = mdict['match_id']
+                if match_id not in a:
+                    continue
+                for venue_id in venue_ids:
+                    coef = W_i * team_venue_cost[team_id].get(venue_id, 0.0)
+                    if coef != 0.0:
+                        obj.add(a[match_id][venue_id], coef)
+        return obj
+
     def _optimize_with_surrogate(self, time_limit, use_surrogate=True):
         """
-        Solve the MILP with current surrogate KPI terms.
-        
+        Solve the MILP with the current surrogate KPI objective.
+
         Args:
             time_limit: Time limit for Gurobi
-            use_surrogate: If True, use fitted surrogate in objective. 
-                          If False, use base-camp-free KPIs only (for initialization)
-        
+            use_surrogate: If True, use the fitted surrogate weights in the
+                          objective. If False, use unit weights (baseline).
+
         Returns:
             Schedule solution if successful, None otherwise
         """
         import sys
         import time as time_module
-        
-        # Build objective function - keep it SIMPLE to avoid memory bloat
-        # For now, use minimal objective (just need any feasible schedule)
-        # Surrogate+KPI integration would require reformulating with auxiliary variables
-        
-        print(f"       Setting minimal objective (any feasible solution)...")
+
+        # Build the LINEAR surrogate objective over a[match][venue] and set it.
+        print(f"       Building surrogate objective "
+              f"(use_surrogate={use_surrogate})...")
         sys.stdout.flush()
-        
-        # Simple objective: minimize 0 (just find feasible solution)
-        # In iterations with surrogate, could add penalty terms, but keeping simple for now
-        obj_expr = gp.LinExpr(0)
+        obj_expr = self._build_surrogate_objective(use_surrogate)
         self.model.setObjective(obj_expr, GRB.MINIMIZE)
-        
+
         # Set time limit
         self.model.setParam('TimeLimit', time_limit)
-        
+
         # Optimize
         num_vars = len(self.model_builder.x) * len(self.model_builder.slots) * len(self.data_loader.venues)
         print(f"       Solving MILP (time limit: {time_limit}s, {num_vars} variables)...")
@@ -267,7 +417,7 @@ class OptSimSolver:
         solve_start = time_module.time()
         self.model.optimize()
         solve_time = time_module.time() - solve_start
-        
+
         status_str = {
             1: "LOADED", 2: "OPTIMAL", 3: "INFEASIBLE", 4: "INF_OR_UNBD", 
             5: "UNBOUNDED", 6: "CUTOFF", 7: "ITERATION_LIMIT", 8: "NODE_LIMIT",
@@ -275,10 +425,10 @@ class OptSimSolver:
             13: "SUBOPTIMAL", 14: "INPROG", 15: "USER_OBJ_LIMIT"
         }
         status_name = status_str.get(self.model.status, "UNKNOWN")
-        
+
         print(f"       Optimization completed in {solve_time:.1f}s (status: {self.model.status}={status_name})")
         sys.stdout.flush()
-        
+
         if self.model.status in [GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.SUBOPTIMAL]:
             print(f"       [OK] Solution found, extracting...")
             sys.stdout.flush()
@@ -315,25 +465,47 @@ class OptSimSolver:
         
         return assignment
     
+    def _set_normalizers_from_baseline(self, baseline_kpis):
+        """
+        Set per-KPI-family normalisation divisors Kbar_k from the baseline
+        simulation. Using the baseline's own family totals makes the weighted
+        penalty Lambda(K) scale-free, so no single KPI (e.g. travel in km)
+        dominates the guard's accept/reject decision.
+        """
+        normalizers = {}
+        for fam in KPI_FAMILY_TO_WEIGHT_KEY.keys():
+            team_values = baseline_kpis.get(fam, {})
+            total = sum(team_values.values()) if isinstance(team_values, dict) else float(team_values)
+            # Guard against zero/near-zero baselines.
+            normalizers[fam] = total if abs(total) > 1e-9 else 1.0
+        self.kpi_normalizers = normalizers
+
     def _compute_kpi_penalty(self, kpis):
         """
-        Compute normalized penalty from KPI dict.
-        
+        Compute the weighted, normalised penalty Lambda(K) (Section 9.4):
+
+            Lambda(K) = sum_k  lambda_k * (K_k / Kbar_k)
+
+        where K_k is the total of KPI family k over all teams, lambda_k is the
+        analyst weight from KPI_WEIGHTS, and Kbar_k is the baseline normaliser.
+        This replaces the previous raw, unweighted sum in which travel (km)
+        swamped border-crossings (0-3) and altitude.
+
         Args:
             kpis: Dict with KPI values from simulation
-        
+
         Returns:
             Scalar penalty
         """
         penalty = 0.0
-        
-        # Sum across all KPI dimensions
-        for kpi_type, team_values in kpis.items():
-            if isinstance(team_values, dict):
-                penalty += sum(team_values.values())
-            else:
-                penalty += team_values
-        
+        for fam, wkey in KPI_FAMILY_TO_WEIGHT_KEY.items():
+            team_values = kpis.get(fam, {})
+            total = sum(team_values.values()) if isinstance(team_values, dict) else float(team_values)
+            lam = KPI_WEIGHTS.get(wkey, 1.0)
+            norm = 1.0
+            if self.kpi_normalizers:
+                norm = max(self.kpi_normalizers.get(fam, 1.0), 1e-9)
+            penalty += lam * (total / norm)
         return penalty
     
     def _extract_incumbent_kpis(self):

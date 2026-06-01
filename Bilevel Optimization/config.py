@@ -108,7 +108,7 @@ TEAM_PRIORITY_ORDER = None
 # Model Settings
 # =================================================================
 
-GUROBI_TIME_LIMIT = 36000  # Seconds
+GUROBI_TIME_LIMIT = 3600  # Seconds
 GUROBI_MIP_GAP = 0.01  # 1% optimality gap
 GUROBI_NUM_THREADS = 4
 # Verbosity: 0=off, 1=warning, 2=normal, 3=detailed, 4=maximum

@@ -17,7 +17,7 @@ import numpy as np
 from config import (
     KPI_WEIGHTS, GUROBI_TIME_LIMIT, GUROBI_MIP_GAP, GUROBI_NUM_THREADS,
     GUROBI_VERBOSITY, MATCH_COUNTS_BY_COUNTRY, REST_MIN, MATCH_DURATION,
-    TURNOVER_WINDOW
+    TURNOVER_WINDOW, HOST_NATIONS
 )
 
 
@@ -63,13 +63,19 @@ class ModelBuilder:
         
         self.slots = []
         self.slot_map = {}
-        
+        self.slot_tau = {}  # slot_idx -> chronological time in hours (tau_t)
+
+        # Reference epoch = earliest date, so tau is a non-negative hour count
+        date_origin = pd.Timestamp(min(unique_dates)).normalize()
+
         for date in unique_dates:
+            day_offset = (pd.Timestamp(date).normalize() - date_origin).days * 24
             for hour in unique_hours:
                 slot_idx = len(self.slots)
                 self.slots.append((date, hour))
                 self.slot_map[slot_idx] = (date, hour)
-        
+                self.slot_tau[slot_idx] = day_offset + float(hour)
+
         print(f"  Built {len(self.slots)} slots (date-hour combinations)")
         print(f"    Kickoff hours used: {sorted(unique_hours)}")
     
@@ -131,6 +137,20 @@ class ModelBuilder:
         
         return
     
+    def _team_country(self, team_id):
+        """
+        Resolve a team's country for host-nation restriction (H6).
+
+        Prefers an explicit 'country' column on the teams table; falls back to
+        treating the team_id as a country code (host IDs are 'USA'/'MEX'/'CAN').
+        """
+        info = self.data.get_team_info(team_id)
+        if info is not None and 'country' in info.index:
+            val = info['country']
+            if isinstance(val, str) and val:
+                return val.upper()
+        return str(team_id).upper()
+
     def _add_hard_constraints(self):
         """Add hard feasibility constraints (H1-H8)."""
         print("Adding hard constraints...")
@@ -178,6 +198,147 @@ class ModelBuilder:
             self.model.addConstr(expr == 3, f"H2_team_{team_id}")
         print(f"    Added {len(self.data.team_by_id)} H2 constraints")
         
+        # H3: One match per team per round
+        print("  Adding H3 constraints (one match per team per round)...")
+        rounds = sorted(self.data.matches['round'].unique())
+        # Map each round to the set of slot indices belonging to it.
+        # Rounds are scheduled in chronological blocks; we partition slots by
+        # the rounds actually present on each match date.
+        round_h3_count = 0
+        for team_id in self.data.team_by_id.keys():
+            matches = self.data.get_team_matches(team_id)
+            for r in rounds:
+                match_ids_r = [m['match_id'] for m in matches if m['round'] == r]
+                if not match_ids_r:
+                    continue
+                expr = gp.quicksum(
+                    self.x[match_id][slot_idx][venue_id]
+                    for match_id in match_ids_r
+                    for slot_idx in range(num_slots)
+                    for venue_id in venue_ids
+                )
+                self.model.addConstr(expr == 1, f"H3_team_{team_id}_round_{r}")
+                round_h3_count += 1
+        print(f"    Added {round_h3_count} H3 constraints")
+
+        # H4: Stadium turnover -- at most one match per stadium in any rolling
+        # window of length TURNOVER_WINDOW (= REST_MIN + match duration).
+        print("  Adding H4 constraints (stadium turnover window)...")
+        window = TURNOVER_WINDOW
+        h4_count = 0
+        for venue_id in venue_ids:
+            for t in range(num_slots):
+                tau_t = self.slot_tau[t]
+                window_slots = [
+                    tp for tp in range(num_slots)
+                    if tau_t <= self.slot_tau[tp] < tau_t + window
+                ]
+                if len(window_slots) <= 1:
+                    continue
+                expr = gp.quicksum(
+                    self.x[match_id][tp][venue_id]
+                    for match_id in self.x.keys()
+                    for tp in window_slots
+                )
+                self.model.addConstr(expr <= 1, f"H4_venue_{venue_id}_slot_{t}")
+                h4_count += 1
+        print(f"    Added {h4_count} H4 constraints")
+
+        # H5: Minimum team rest -- a team cannot play two matches whose kickoffs
+        # are closer than REST_MIN + match duration (kickoff-to-kickoff).
+        print("  Adding H5 constraints (minimum team rest)...")
+        rest_window = REST_MIN + MATCH_DURATION
+        h5_count = 0
+        for team_id in self.data.team_by_id.keys():
+            matches = self.data.get_team_matches(team_id)
+            match_ids = [m['match_id'] for m in matches]
+            for a_i in range(len(match_ids)):
+                for b_i in range(a_i + 1, len(match_ids)):
+                    m1, m2 = match_ids[a_i], match_ids[b_i]
+                    for t in range(num_slots):
+                        for tp in range(num_slots):
+                            if abs(self.slot_tau[t] - self.slot_tau[tp]) < rest_window:
+                                expr = (
+                                    gp.quicksum(self.x[m1][t][v] for v in venue_ids)
+                                    + gp.quicksum(self.x[m2][tp][v] for v in venue_ids)
+                                )
+                                self.model.addConstr(
+                                    expr <= 1,
+                                    f"H5_{team_id}_{m1}_{m2}_{t}_{tp}"
+                                )
+                                h5_count += 1
+        print(f"    Added {h5_count} H5 constraints")
+
+        # H6: Host-nation venue restriction -- host-nation teams play only in
+        # stadiums located in their own country.
+        print("  Adding H6 constraints (host-nation venue restriction)...")
+        host_set = set(HOST_NATIONS)
+        h6_count = 0
+        for team_id in self.data.team_by_id.keys():
+            team_country = self._team_country(team_id)
+            if team_country not in host_set:
+                continue
+            allowed_venues = set(self.data.get_venues_in_country(team_country))
+            disallowed = [v for v in venue_ids if v not in allowed_venues]
+            if not disallowed:
+                continue
+            matches = self.data.get_team_matches(team_id)
+            for m in matches:
+                match_id = m['match_id']
+                expr = gp.quicksum(
+                    self.x[match_id][slot_idx][venue_id]
+                    for slot_idx in range(num_slots)
+                    for venue_id in disallowed
+                )
+                self.model.addConstr(expr == 0, f"H6_{team_id}_{match_id}")
+                h6_count += 1
+        print(f"    Added {h6_count} H6 constraints")
+
+        # H7: Simultaneous final matches -- the two final-round matches of each
+        # group kick off in the same slot.
+        print("  Adding H7 constraints (simultaneous group finals)...")
+        final_round = rounds[-1] if rounds else None
+        h7_count = 0
+        for group, slot_vars in self.y.items():
+            # Final-round matches of this group
+            group_matches = self.data.matches[self.data.matches['group'] == group]
+            final_match_ids = group_matches[
+                group_matches['round'] == final_round
+            ]['match_id'].tolist()
+            if not final_match_ids:
+                continue
+
+            # Exactly one final slot per group
+            self.model.addConstr(
+                gp.quicksum(slot_vars[s] for s in range(num_slots)) == 1,
+                f"H7_oneslot_{group}"
+            )
+            h7_count += 1
+
+            for s in range(num_slots):
+                # Both final matches happen at or after the final slot only in it
+                in_slot = gp.quicksum(
+                    self.x[m][s][v] for m in final_match_ids for v in venue_ids
+                )
+                self.model.addConstr(
+                    in_slot >= 2 * slot_vars[s],
+                    f"H7_inslot_{group}_{s}"
+                )
+                # No final match strictly after the designated final slot
+                later = gp.quicksum(
+                    self.x[m][sp][v]
+                    for m in final_match_ids
+                    for sp in range(num_slots)
+                    if self.slot_tau[sp] > self.slot_tau[s]
+                    for v in venue_ids
+                )
+                self.model.addConstr(
+                    later <= 2 * (1 - slot_vars[s]),
+                    f"H7_nolater_{group}_{s}"
+                )
+                h7_count += 2
+        print(f"    Added {h7_count} H7 constraints")
+
         # H8: Match allocation by country
         print("  Adding H8 constraints (country quotas)...")
         for country in MATCH_COUNTS_BY_COUNTRY.keys():

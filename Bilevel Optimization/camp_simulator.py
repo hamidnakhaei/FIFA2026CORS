@@ -17,30 +17,58 @@ class CampSimulator:
     Exclusivity is enforced by removing selected camps from availability.
     """
     
-    def __init__(self, data_loader, parameters, team_priority_order=None):
+    def __init__(self, data_loader, parameters, team_priority_order=None,
+                 full_ban_teams=None, visa_bond_teams=None,
+                 visa_bond_penalty=0.0):
         """
         Initialize the simulator.
-        
+
         Args:
             data_loader: DataLoader instance with all data
-            parameters: ParameterBuilder with precomputed constants
-            team_priority_order: List of team_ids in selection order.
-                                If None, uses default ordering (alphabetical by team_id)
+            parameters: dict of precomputed constants (from build_parameters)
+            team_priority_order: List of team_ids in selection order
+                                (seeding/qualification). If None, falls back
+                                to alphabetical by team_id.
+            full_ban_teams: List of team_ids barred from US base camps
+                            (Section 5.2 hard exclusion).
+            visa_bond_teams: List of team_ids that incur a soft penalty for
+                            US base camps.
+            visa_bond_penalty: km-equivalent penalty added to US camps for
+                            visa-bond teams.
         """
         self.data = data_loader
         self.params = parameters
-        
+
+        # US entry restrictions (Section 5.2)
+        self.full_ban_teams = set(full_ban_teams or [])
+        self.visa_bond_teams = set(visa_bond_teams or [])
+        self.visa_bond_penalty = float(visa_bond_penalty or 0.0)
+
         # Create index mappings from DataFrames
         match_ids = data_loader.matches['match_id'].tolist()
         venue_ids = data_loader.venues['venue_id'].tolist()
         self.match_id_to_idx = {mid: i for i, mid in enumerate(match_ids)}
         self.venue_id_to_idx = {vid: i for i, vid in enumerate(venue_ids)}
         self.venue_idx_to_id = {i: vid for i, vid in enumerate(venue_ids)}
-        
-        # Team priority order for sequential assignment
+
+        # US camp ids (for ban/bond handling)
+        self.us_camps = set(
+            data_loader.base_camps[data_loader.base_camps['country'] == 'USA']['base_camp_id'].tolist()
+        )
+        # US venue ids (for jet-lag/lookup country checks)
+        self.us_venue_ids = set(data_loader.get_venues_in_country("USA"))
+
+        # Team priority order for sequential assignment (Section 9.2).
+        # Keep only valid ids, then append any teams missing from the supplied
+        # order so every team is always assigned.
         all_teams = sorted(data_loader.team_by_id.keys())
-        self.team_priority = team_priority_order if team_priority_order else all_teams
-        
+        if team_priority_order:
+            ordered = [t for t in team_priority_order if t in data_loader.team_by_id]
+            ordered += [t for t in all_teams if t not in set(ordered)]
+            self.team_priority = ordered
+        else:
+            self.team_priority = all_teams
+
         # Eligible camps per team (filtered by hard constraints like US bans)
         self.eligible_camps_by_team = self._build_eligible_camps()
     
@@ -53,23 +81,17 @@ class CampSimulator:
             Dict mapping team_id -> list of eligible camp_ids
         """
         eligible = {}
-        
-        # Get US base camps from the data
-        us_camps = self.data.base_camps[self.data.base_camps['country'] == 'USA']['base_camp_id'].tolist()
-        
-        # Check for US ban list (if exists in parameters)
-        us_ban_teams = self.params.get('us_ban_teams', []) if isinstance(self.params, dict) else []
-        
+
         for team_id in self.data.team_by_id.keys():
             # Start with all camps eligible for this team
             camps = list(self.data.eligible_camps_by_team.get(team_id, []))
-            
-            # Remove US camps if team is under full US entry ban
-            if team_id in us_ban_teams:
-                camps = [c for c in camps if c not in us_camps]
-            
+
+            # Section 5.2 hard exclusion: full-ban teams cannot use US camps.
+            if team_id in self.full_ban_teams:
+                camps = [c for c in camps if c not in self.us_camps]
+
             eligible[team_id] = camps
-        
+
         return eligible
     
     def simulate(self, venue_assignment: np.ndarray) -> Tuple[Dict[str, str], Dict]:
@@ -158,12 +180,11 @@ class CampSimulator:
                 dist = dist_matrix.get(camp_id, {}).get(venue_id, 0)
                 cost += 2 * dist  # Round-trip
             
-            # Add US visa-bond penalty if applicable (if it exists in params)
-            if 'visa_penalties' in self.params:
-                visa_penalties = self.params['visa_penalties']
-                if team_id in visa_penalties and camp_id in visa_penalties[team_id]:
-                    cost += visa_penalties[team_id].get(camp_id, 0)
-            
+            # Section 5.2 soft penalty: visa-bond teams incur a friction
+            # cost for choosing a US base camp.
+            if team_id in self.visa_bond_teams and camp_id in self.us_camps:
+                cost += self.visa_bond_penalty
+
             if cost < best_cost:
                 best_cost = cost
                 best_camp = camp_id
@@ -223,16 +244,19 @@ class CampSimulator:
                 travel_cost += 2 * dist
             kpis['travel'][team_id] = travel_cost
             
-            # KPI 1.3: Jet-lag penalty (simplified - use precomputed if available)
+            # KPI 1.3: Jet-lag penalty. The simulator sees only venues, not
+            # slots, so we average the precomputed per-slot penalty Phi over
+            # all candidate kickoff hours -- a slot-agnostic estimate of the
+            # circadian burden of camp->venue time-zone shift. (The slot-exact
+            # value is left to the MILP guard, per Section 9.2.)
             jet_lag_penalties = self.params.get('Phi', {})
             jet_lag_cost = 0.0
+            team_phi = jet_lag_penalties.get(team_id, {})
+            camp_phi = team_phi.get(camp_id, {}) if isinstance(team_phi, dict) else {}
             for venue_id in team_venues:
-                if team_id in jet_lag_penalties:
-                    if camp_id in jet_lag_penalties[team_id]:
-                        if venue_id in jet_lag_penalties[team_id][camp_id]:
-                            # Average across slots
-                            slot_penalties = jet_lag_penalties[team_id][camp_id][venue_id]
-                            jet_lag_cost += np.mean(list(slot_penalties.values())) if isinstance(slot_penalties, dict) else 0
+                slot_penalties = camp_phi.get(venue_id, {}) if isinstance(camp_phi, dict) else {}
+                if isinstance(slot_penalties, dict) and slot_penalties:
+                    jet_lag_cost += float(np.mean(list(slot_penalties.values())))
             kpis['jet_lag'][team_id] = jet_lag_cost
             
             # KPI 1.4: Border crossings (count venues in different country than camp)
