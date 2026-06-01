@@ -1,0 +1,1579 @@
+% =================================================================
+%  TechnicalReport.tex
+%  Technical Report: KPI Framework for the 2026 FIFA World Cup
+%                    Group-Stage Schedule Evaluation
+%  CORS OR Challenge 2026 -- Team UofT Champions
+%
+%  Revision notes (this version):
+%   - Travel KPIs (1.1-1.4) reformulated for base-camp logistics
+%   - KPI 1.7 (Entry and Visa Restriction Exposure) added
+%   - KPI 2.4 (Altitude) reformulated for base-camp model
+%   - KPI 3.3: positional advantage score a_i defined exactly
+%   - Summary table updated (25 KPIs total)
+% =================================================================
+
+\documentclass[12pt, letterpaper]{article}
+
+% --- Page geometry -----------------------------------------------
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+
+% --- Math --------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+
+% --- Typography --------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{setspace}
+
+% --- Coloured boxes for KPIs ------------------------------------
+\usepackage[most]{tcolorbox}
+
+% --- Tables ------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% --- Headers and footers ----------------------------------------
+\usepackage{fancyhdr}
+
+% --- Lists -------------------------------------------------------
+\usepackage{enumitem}
+
+% --- References (author--year, parenthetical) -------------------
+\usepackage[round, authoryear, sort&compress]{natbib}
+
+% --- Hyperlinks --------------------------------------------------
+\usepackage[hidelinks, breaklinks=true]{hyperref}
+
+% =================================================================
+%  Custom KPI box
+%  Usage: \begin{kpibox}{KPI X.Y --- Title}  ...  \end{kpibox}
+% =================================================================
+\newtcolorbox{kpibox}[1]{
+  enhanced,
+  breakable,
+  colback      = gray!5!white,
+  colframe     = black!40,
+  fonttitle    = \bfseries\small,
+  coltitle     = black,
+  colbacktitle = gray!18!white,
+  title        = {#1},
+  boxrule      = 0.65pt,
+  left  = 6pt,
+  right = 6pt,
+  top   = 4pt,
+  bottom= 4pt,
+  toptitle    = 3pt,
+  bottomtitle = 3pt,
+}
+
+% Short-cut for field labels inside KPI boxes
+\newcommand{\kpilabel}[1]{\noindent\textbf{#1}\enspace}
+
+% =================================================================
+%  Headers and footers
+% =================================================================
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small KPI Framework \textendash{} 2026 FIFA World Cup Group-Stage Schedule}
+\rhead{\small CORS OR Challenge 2026}
+\rfoot{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% =================================================================
+%  Spacing
+% =================================================================
+\onehalfspacing
+\setlength{\parskip}{3pt}
+
+% =================================================================
+%  Title
+% =================================================================
+\title{%
+  \LARGE\textbf{CORS OR Challenge 2026 \textendash{} Technical Report}
+}
+\author{%
+  \textbf{Team UofT Champions}\\[4pt]
+  \small University of Toronto
+}
+\date{May 2026}
+
+% =================================================================
+\begin{document}
+% =================================================================
+
+\maketitle
+\thispagestyle{empty}
+\vspace{10pt}
+
+\vspace{6pt}
+%\tableofcontents
+\newpage
+
+% =================================================================
+%  1.  INTRODUCTION
+% =================================================================
+\section{Key Performance Indicators for Evaluating the 2026 FIFA
+         World Cup Group-Stage Schedule}
+
+This report defines the key performance indicators (KPIs) used
+to evaluate the group-stage schedule of the 2026 FIFA World Cup as part
+of the CORS OR Challenge 2026.  The group stage comprises 72 matches
+distributed across 16 host cities in Canada, Mexico, and the United States
+between June~11 and June~27, 2026.  We organise our evaluation framework
+around \textbf{five categories of scheduling criteria}: (1)~\emph{Travel,
+Relocation, and Rest}, (2)~\emph{Heat and Environmental Exposure},
+(3)~\emph{Competitive Integrity}, (4)~\emph{Operational Efficiency}, and
+(5)~\emph{Broadcast Attractiveness and Commercial Value}.  Within these five
+categories, we propose 19 individual KPIs together with 5 composite
+cross-criteria KPIs and 1 robustness indicator, for a total of 25 formally
+defined performance measures.  Each KPI is accompanied by a formal
+description, a precise mathematical formula, and a citation.
+
+\subsection{Five Criteria Categories}
+
+\begin{enumerate}[leftmargin=*, label=\textbf{C\arabic*.}, itemsep=6pt]
+
+  \item \textbf{Travel, Relocation, and Rest.}
+        How far teams must travel on round trips between their base camp
+        and each group-stage venue; whether the travel burden is equitably
+        shared within each group; the jet-lag cost of crossing time zones;
+        the geographic spread of a team's match venues across clusters;
+        whether all teams receive adequate and symmetric rest between
+        consecutive matches; and the impact of US travel-ban and visa
+        policies on fan accessibility at US-hosted fixtures.
+
+  \item \textbf{Heat and Environmental Exposure.}
+        The degree to which the schedule exposes players to dangerous heat
+        (quantified via the Wet-Bulb Globe Temperature, WBGT); whether
+        heat-risk matches are assigned to roofed/climate-controlled venues;
+        and the performance disruption caused by large elevation changes
+        between a team's base camp and high-altitude Mexican venues.
+
+  \item \textbf{Competitive Integrity.}
+        Whether the schedule permits or discourages collusion in final-round
+        group matches; the probability and severity of stakeless
+        (``dead-rubber'') matches; and whether the ordering of matches within
+        a group systematically advantages particular teams through first-mover
+        effects.
+
+  \item \textbf{Operational Efficiency.}
+        The evenness of the match-and-operations load across the 16 host
+        venues, and the degree to which the schedule enables fans to attend
+        affordably.
+
+  \item \textbf{Broadcast Attractiveness and Commercial Value.}
+        Alignment of kickoff times with peak viewing windows in key global
+        markets; the quality of time slots allocated to high-profile matches;
+        and the equitable distribution of commercially valuable fixtures
+        across host cities.
+
+\end{enumerate}
+
+\subsection{Importance Ranking and KPI Density}
+\label{sec:ranking}
+
+The five criteria carry different analytical weights for the 2026 edition.
+The KPI density in this report reflects the following judgment.
+
+\textbf{C1 (Travel/Rest) and C2 (Heat)} are the most consequential
+criteria.  For heat, \citet{MullanEtAl2025} find that 14 of 16 host cities
+frequently exceed 28\,$^\circ$C WBGT in afternoon slots, and FIFPRO identifies
+six venues as ``extremely high risk''~\citep{FIFPRO2025}.  For travel,
+2026's continent-spanning geography is a direct instantiation of the
+Traveling Tournament Problem~\citep{Easton2001}, with documented intra-group
+travel disparities exceeding 2{,}000~km~\citep{MikamiTravel2026}.  Both
+criteria receive four to seven KPIs each.
+
+\textbf{C3 (Competitive Integrity)} carries the deepest academic literature
+but the 12$\times$4 format already resolves the primary collusion concern by
+design~\citep{GuajardoKrumer2024, FIFA2023Format}; three targeted KPIs
+suffice.
+
+\textbf{C4 (Operational Efficiency) and C5 (Broadcast)} are genuine
+scheduling drivers but subordinate to welfare and fairness in a multi-objective
+programme.  They receive two to three KPIs each and primarily serve as
+tension terms.
+
+In addition to the individual KPIs, Section~\ref{sec:composite} proposes five
+\emph{composite KPIs} spanning multiple criteria, including a
+Recovery-Adjusted Hardship Index (RAHI) and a Schedule Fairness Index (SFI).
+
+% =================================================================
+%  2.  NOTATION
+% =================================================================
+\section{Mathematical Notation}
+
+The following symbols are used throughout the report.  All distances are
+great-circle (Haversine) distances in kilometres; $\mathrm{dist}(\cdot,\cdot)$
+applies to any two geographic points, not only venues in $V$.
+Rest days are calendar days.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.30}
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Symbol} & \textbf{Definition} \\
+\midrule
+$T$ & Set of 48 teams; generic index $i$ \\
+$G$ & Set of 12 groups (each $|g|=4$); generic index $g$ \\
+$M$ & Set of 72 group-stage matches; generic index $m$ \\
+$V$ & Set of 16 host venues; generic index $v$ \\
+$D$ & Set of calendar dates June~11--June~27; generic index $d$ \\
+$S$ & Set of available kickoff slots (date$\times$time pairs) \\
+$v_{i,k}$ & Venue of team $i$'s $k$-th group match,
+            $k\in\{1,2,3\}$ \\
+$d_{i,k}$ & Date of team $i$'s $k$-th group match \\
+$s_{i,k}$ & Kickoff slot of team $i$'s $k$-th group match \\
+$g_{i,k}$ & Rest days between matches $k$ and $k{+}1$ of team $i$:
+            $\;g_{i,k} = d_{i,k+1} - d_{i,k} - 1$ \\
+$b_{i}$ & Base camp of team $i$ (a fixed geographic location,
+          not necessarily in $V$) \\
+$\mathrm{dist}(u,v)$ & Great-circle distance between two geographic
+                       points $u$ and $v$ (km) \\
+$\mathrm{tz}(v)$ & UTC offset of venue $v$ (hours) \\
+$\mathrm{tz}(b_i)$ & UTC offset of team $i$'s base camp (hours) \\
+$\mathrm{elev}(v)$ & Elevation of venue $v$ (metres above sea level) \\
+$\mathrm{elev}(b_i)$ & Elevation of team $i$'s base camp (metres) \\
+$\mathrm{cluster}(v)$ & FIFA zone of venue $v$: West, Central, or East \\
+$R \subseteq V$ & Roofed or climate-controlled venues \\
+$V^{\mathrm{US}} \subseteq V$ & US-hosted venues \\
+$r(m,i)$ & Rest days of team $i$ immediately before match $m$ \\
+$E_i$ & FIFA/Elo rating of team $i$ (lower $=$ stronger) \\
+$P \subseteq M$ & High-profile matches (e.g., both teams ranked
+                  FIFA top-20) \\
+$F^{\mathrm{ban}} \subseteq T$ & Teams from countries subject to a
+                                 full US entry ban \\
+$F^{\mathrm{bond}} \subseteq T$ & Teams from countries subject to the
+                                  US visa bond programme \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =================================================================
+%  3.  CRITERION 1: TRAVEL, RELOCATION, AND REST
+% =================================================================
+\section{Criterion 1: Travel, Relocation, and Rest}
+
+\subsection{Overview}
+
+The geographic scale of 2026 makes travel the single largest logistical
+challenge of the group stage.  Venues span four time zones and three
+countries, and group-stage fixture assignments can require teams to cover
+more than 5{,}000~km of round-trip distance across their three
+matches~\citep{SITravel2026}.
+
+\medskip
+\textbf{Base-camp logistics.}
+A defining feature of 2026 that distinguishes it from prior tournaments
+is the adopted \emph{base-camp model}: each team establishes a single
+fixed base camp $b_i$ at a FIFA-approved city before the group stage
+begins, departs for each match, and returns to $b_i$ immediately
+afterwards.  Unlike the classical ``stay at venue'' model---in which
+teams travel directly between consecutive venues and rest at each
+destination---the base-camp model means that every match generates an
+independent round trip $b_i \!\to\! v_{i,k} \!\to\! b_i$.
+All travel-related KPIs in this section are formulated under the
+base-camp assumption.
+
+\medskip
+\textbf{Rest inequality.}
+Recovery between matches is a direct welfare concern: insufficient rest
+impairs physical performance and increases injury risk, while asymmetric
+rest between opponents introduces a structural competitive advantage
+unrelated to playing ability.
+
+\medskip
+\textbf{Entry and visa restrictions.}
+A novel 2026-specific concern: US government travel bans and visa bond
+requirements affecting nationals of several qualified nations.
+
+\subsection{KPIs}
+
+% ----- KPI 1.1 -----
+\begin{kpibox}{KPI~1.1 \textendash{} Total Per-Team Travel Distance}
+
+\kpilabel{Description.}
+The total distance a team travels across its three group-stage matches
+under the base-camp model.  Each match $k$ generates a round trip from
+the base camp $b_i$ to venue $v_{i,k}$ and back, so there are three
+independent round trips (one per match) rather than two inter-venue legs.
+This is formulated in the classical Traveling Tournament Problem
+formulation~\citep{Easton2001} (which assumed teams stay at each venue
+and travel directly to the next).  Summing across all 48 teams gives the
+tournament-level efficiency objective; minimising the maximum gives the
+equity objective.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{TD}_i &= 2\sum_{k=1}^{3} \mathrm{dist}(b_i,\, v_{i,k}),
+  \qquad i \in T.
+\end{align*}
+The factor of~2 accounts for both the outbound and return legs of each
+round trip.
+
+\medskip\noindent
+Efficiency objective: $\;\displaystyle\min_{S}\;\sum_{i \in T}
+\mathrm{TD}_i$.
+\quad
+Equity (minimax) objective: $\;\displaystyle\min_{S}\;\max_{i \in T}
+\mathrm{TD}_i$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Easton2001} (classical TTP); \citet{GuajardoEtAl2026};
+\citet{SITravel2026}.  Base-camp adaptation is original (this work).
+\end{kpibox}
+
+% ----- KPI 1.2 -----
+\begin{kpibox}{KPI~1.2 \textendash{} Intra-Group Travel Dispersion}
+
+\kpilabel{Description.}
+The inequality of base-camp round-trip travel burdens \emph{within} a
+group.  Because group-mates compete directly for the same qualification
+slots, a large disparity in total travel constitutes an unearned
+competitive advantage.  \citet{GuajardoEtAl2026} formally frame this
+as the fairness complement of KPI~1.1, noting disparities such as
+Argentina ($\approx700$~km total) vs.\ Algeria ($\approx2{,}400$~km)
+within the same group---inequalities that arise from uneven venue
+assignments regardless of base-camp choices.
+
+\medskip
+\kpilabel{Formula.}
+Using the base-camp total travel $\mathrm{TD}_i$ from KPI~1.1,
+define for group $g$ the range
+\begin{align*}
+  \Delta_g &= \max_{i \in g}\,\mathrm{TD}_i \;-\;
+              \min_{i \in g}\,\mathrm{TD}_i
+\end{align*}
+and the coefficient of variation
+\begin{align*}
+  \mathrm{CV}_g &=
+    \frac{\sigma\!\bigl(\{\mathrm{TD}_i : i \in g\}\bigr)}
+         {\mu\!\bigl(\{\mathrm{TD}_i : i \in g\}\bigr)}.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Fairness objectives: $\;\displaystyle\min_{S}\;\sum_{g \in G}\Delta_g$
+\;or\; $\;\displaystyle\min_{S}\;\max_{g \in G}\Delta_g$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{GuajardoEtAl2026}; \citet{MikamiTravel2026}.
+\end{kpibox}
+
+% ----- KPI 1.3 -----
+\begin{kpibox}{KPI~1.3 \textendash{} Circadian Shift Cost (Jet-Lag Burden)}
+
+\kpilabel{Description.}
+Under the base-camp model, every team returns to its base camp $b_i$
+immediately after each match and spends its rest days there.  Because
+players are continuously re-exposed to the base-camp light--dark cycle
+between matches, their circadian clock remains anchored to
+$\mathrm{tz}(b_i)$ throughout the group stage.  The performance-relevant
+jet-lag effect is therefore about the mismatch between the \emph{kickoff time at the
+match venue} and the players' internal body clock, which is set to
+base-camp local time.
+
+Specifically, if the match at venue $v_{i,k}$ kicks off at local time
+$\tau_{i,k}$ (e.g., 13:00 local), the players' bodies perceive that
+kickoff at the equivalent base-camp clock time
+\begin{align*}
+  \hat{\tau}_{i,k} &= \tau_{i,k}
+    - \bigl[\mathrm{tz}(v_{i,k}) - \mathrm{tz}(b_i)\bigr],
+\end{align*}
+expressed modulo 24~hours.  A kickoff that falls during the players'
+subjective night window (approximately 23:00--07:00 base-camp time)
+constitutes a meaningful circadian penalty: alertness, reaction time,
+and peak muscular output are significantly reduced during those hours
+even when players appear awake~\citep{Recht1995}.
+
+\medskip
+\kpilabel{Formula.}
+Let $\tau_{i,k} \in [0,24)$ denote the kickoff time of match $k$ of
+team $i$, expressed in local venue time (hours).  Define the
+\emph{perceived kickoff time} in base-camp time:
+\begin{align*}
+  \hat{\tau}_{i,k} &= \Bigl(\tau_{i,k}
+    - \bigl[\mathrm{tz}(v_{i,k}) - \mathrm{tz}(b_i)\bigr]\Bigr)
+    \bmod 24.
+\end{align*}
+Define the \emph{circadian penalty function} measuring how far the
+perceived kickoff falls inside the subjective night window
+$[\tau_{\mathrm{lo}},\, \tau_{\mathrm{hi}}]$
+(default: $\tau_{\mathrm{lo}} = 23$, $\tau_{\mathrm{hi}} = 7$,
+i.e., the window wraps around midnight):
+\begin{align*}
+  \phi(\hat{\tau}) &= \begin{cases}
+    \min\!\bigl(\hat{\tau} - \tau_{\mathrm{lo}},\;
+                \tau_{\mathrm{hi}} + 24 - \tau_{\mathrm{lo}}\bigr)
+      & \text{if } \hat{\tau} \geq \tau_{\mathrm{lo}}, \\[4pt]
+    \min\!\bigl(\hat{\tau} + 24 - \tau_{\mathrm{lo}},\;
+                \tau_{\mathrm{hi}} - \hat{\tau}\bigr)
+      & \text{if } \hat{\tau} \leq \tau_{\mathrm{hi}}, \\[4pt]
+    0 & \text{otherwise,}
+  \end{cases}
+\end{align*}
+so $\phi(\hat{\tau}) \in [0,8]$ is the depth of intrusion (in hours)
+into the subjective night, and $\phi = 0$ whenever the perceived
+kickoff falls entirely within the subjective day.
+
+The cumulative circadian disruption score for team $i$ across its three
+group-stage matches is:
+\begin{align*}
+  \mathrm{JL}_i &= \sum_{k=1}^{3} \phi\!\bigl(\hat{\tau}_{i,k}\bigr).
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\sum_{i \in T}\mathrm{JL}_i$.
+\quad
+Fairness objective: $\;\displaystyle\min_{S}\;\max_{i \in T}\mathrm{JL}_i$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Recht1995} (circadian performance decrement of 2--7\%;
+eastward harder than westward); \citet{KendallEtAl2010}.
+Perceived-kickoff formulation is original (this work).
+\end{kpibox}
+
+% ----- KPI 1.4 -----
+\begin{kpibox}{KPI~1.4 \textendash{} Match-Venue Geographic Dispersion}
+
+\kpilabel{Description.}
+How many distinct FIFA geographic clusters
+(West/Central/East) must a team visit across its three match venues?
+A team whose three venues all fall within the same cluster can select a
+centrally located base camp and execute short round trips, while a team
+whose venues span all three clusters faces at least one long-haul
+transcontinental flight regardless of base-camp placement.  A
+2026-specific variant counts the number of individual match trips that
+cross an international border from the base camp, triggering additional
+visa, customs, and security obligations unique to this three-nation
+tournament.
+
+\medskip
+\kpilabel{Formula.}
+Venue cluster diversity:
+\begin{align*}
+  \mathrm{CC}_i &= \bigl|\bigl\{\mathrm{cluster}(v_{i,1}),\,
+    \mathrm{cluster}(v_{i,2}),\,
+    \mathrm{cluster}(v_{i,3})\bigr\}\bigr|
+  \;\in\;\{1,2,3\}.
+\end{align*}
+Base-camp border-crossing count:
+\begin{align*}
+  \mathrm{BC}_i &= \bigl|\bigl\{k \in \{1,2,3\} :
+    \mathrm{country}(v_{i,k}) \neq
+    \mathrm{country}(b_i)\bigr\}\bigr|
+  \;\in\;\{0,1,2,3\}.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Primary objective: $\;\displaystyle\min_{S}\;\sum_{i \in T}\mathrm{CC}_i$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{MikamiTravel2026}; \citet{KendallEtAl2010}.
+Reformulation for base-camp logistics is original (this work).
+\end{kpibox}
+
+% ----- KPI 1.5 -----
+\begin{kpibox}{KPI~1.5 \textendash{} Per-Team Rest Adequacy}
+
+\kpilabel{Description.}
+The minimum number of full calendar days separating any two consecutive
+matches of a given team.  FIFA's published schedule design targets at
+least three rest days for every gap, consistent with the 72-hour
+recovery minimum recommended in elite sports medicine.  This KPI
+measures both individual compliance and the margin above the hard
+welfare floor.  The rest calculation is independent of the base-camp
+model: rest days are determined by match dates alone.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{RA}_i &= \min\!\bigl(g_{i,1},\; g_{i,2}\bigr),
+  \qquad g_{i,k} = d_{i,k+1} - d_{i,k} - 1.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Hard constraint: $g_{i,k} \geq g_{\min}$ for all $i \in T$,
+$k \in \{1,2\}$, where $g_{\min} = 2$ (i.e., 72~hours).
+Report the deficiency count $N_{\mathrm{short}} =
+|\{(i,k) : g_{i,k} < 3\}|$.
+
+\medskip
+\kpilabel{Reference.}
+FIFA schedule announcement (June~2024): ``three days of rest for
+teams is observed for 103 of the tournament's 104 matches.''
+\citet{AtanCavdaroglu2018}; \citet{KendallEtAl2010}.
+\end{kpibox}
+
+% ----- KPI 1.6 -----
+\begin{kpibox}{KPI~1.6 \textendash{} Rest Asymmetry Between Opponents}
+
+\kpilabel{Description.}
+Even when every team receives adequate individual rest (KPI~1.5), one
+team may enter a particular match meaningfully fresher than its opponent,
+constituting a structural competitive advantage unrelated to team quality.
+\citet{AtanCavdaroglu2018} define a \emph{rest mismatch} as any match in
+which the two opponents had different numbers of rest days, and show that
+minimising the total count of such mismatches is an integer-programmable
+objective.
+
+\medskip
+\kpilabel{Formula.}
+For match $m$ between teams $i$ and $j$:
+\begin{align*}
+  \mathrm{RD}_m &= \bigl|r(m,i) - r(m,j)\bigr|.
+\end{align*}
+Two objectives:
+\begin{align*}
+  \text{Count objective:}\quad
+    &\min_{S}\;\bigl|\{m \in M : \mathrm{RD}_m > 0\}\bigr|,
+  \\[4pt]
+  \text{Magnitude objective:}\quad
+    &\min_{S}\;\sum_{m \in M} \mathrm{RD}_m.
+\end{align*}
+
+\medskip
+\kpilabel{Reference.}
+\citet{AtanCavdaroglu2018}; \citet{CavdarogluAtan2022}.
+\end{kpibox}
+
+% ----- KPI 1.7 -----
+\begin{kpibox}{KPI~1.7 \textendash{} Entry and Visa Restriction Exposure (ERI)}
+
+\kpilabel{Description.}
+The 2026 World Cup's three-nation hosting structure introduces a
+scheduling fairness dimension with no precedent in prior tournaments.
+The US government's expanded travel ban (effective January~2026) bars
+nationals of several qualified nations from entering the United States.
+While players and team staff are exempted under Presidential Proclamation
+10998, ordinary fans face the full restriction, making it impossible for
+them to attend US-hosted matches~\citep{ESPN2026TravelBan,
+NPR2026TravelBan}.  As of May~2026, four qualified nations---Iran,
+Haiti, Senegal, and C\^{o}te d'Ivoire---are subject to a full entry
+suspension ($F^{\mathrm{ban}}$).  A further three nations---Algeria,
+Cabo Verde, and Tunisia---are subject to a US visa bond programme
+requiring applicants to post deposits of \$5{,}000--\$15{,}000
+($F^{\mathrm{bond}}$), a severe practical barrier for most ordinary
+supporters~\citep{AIC2026TravelBan}.
+
+The schedule determines which matches are hosted in the United States
+(78~of the 104 group-stage and knockout fixtures), directly controlling
+the exposure of affected nations to these restrictions.  Minimising this
+KPI is equivalent to concentrating the fixtures of affected nations at
+Canadian and Mexican venues wherever flexibility exists.
+
+\medskip
+\kpilabel{Formula.}
+Assign a severity weight to each team:
+\begin{align*}
+  \sigma(t) &= \begin{cases}
+    1.0 & \text{if } t \in F^{\mathrm{ban}}, \\
+    0.5 & \text{if } t \in F^{\mathrm{bond}}, \\
+    0   & \text{otherwise.}
+  \end{cases}
+\end{align*}
+For match $m$ between teams $i(m)$ and $j(m)$ at venue $v(m)$, the
+entry and visa restriction exposure index is:
+\begin{align*}
+  \mathrm{ERI} &= \sum_{m \in M}
+    \mathbf{1}\!\bigl[v(m) \in V^{\mathrm{US}}\bigr]\cdot
+    \max\!\bigl(\sigma(i(m)),\;\sigma(j(m))\bigr).
+\end{align*}
+Unweighted count of affected US-hosted matches:
+\begin{align*}
+  N_{\mathrm{ban}} &= \sum_{m \in M}
+    \mathbf{1}\!\bigl[v(m) \in V^{\mathrm{US}}\bigr]\cdot
+    \mathbf{1}\!\bigl[i(m) \in F^{\mathrm{ban}} \cup F^{\mathrm{bond}}
+    \;\vee\; j(m) \in F^{\mathrm{ban}} \cup F^{\mathrm{bond}}\bigr].
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\mathrm{ERI}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{ESPN2026TravelBan}; \citet{NPR2026TravelBan};
+\citet{AIC2026TravelBan}; \citet{FIFA2023Format}.
+ERI formulation is original (this work).
+\end{kpibox}
+
+% =================================================================
+%  4.  CRITERION 2: HEAT AND ENVIRONMENTAL EXPOSURE
+% =================================================================
+\section{Criterion 2: Heat and Environmental Exposure}
+
+\subsection{Background: Wet-Bulb Globe Temperature (WBGT)}
+\label{sec:wbgt}
+
+\textbf{Definition and physical interpretation.}
+The Wet-Bulb Globe Temperature (WBGT) is the internationally recognised
+heat-stress index in both sports medicine and occupational health.
+Originally developed by the U.S.\ Army in the 1950s~\citep{YaglouMinard1957},
+it is now mandated by the International Olympic Committee, the
+International Labour Organization, and the American College of Sports
+Medicine.
+
+WBGT outperforms dry-bulb (``shade'') temperature as a welfare metric
+because it simultaneously accounts for three physical pathways of heat
+stress:
+\begin{itemize}[noitemsep, topsep=4pt]
+  \item \emph{Humidity}, via the natural wet-bulb temperature
+        $T_\mathrm{nwb}$ (weight~0.70 outdoors): the dominant factor,
+        because high humidity impedes evaporative cooling through
+        perspiration.
+  \item \emph{Radiant heat from solar radiation}, via the black-globe
+        temperature $T_g$ (weight~0.20 outdoors): relevant only outdoors.
+  \item \emph{Air temperature}, via the dry-bulb temperature
+        $T_\mathrm{db}$ (weight~0.10 outdoors).
+\end{itemize}
+
+For \emph{outdoor, unshaded} conditions:
+\begin{equation}
+  \mathrm{WBGT}_m
+    \;=\; 0.70\,T_\mathrm{nwb} \;+\; 0.20\,T_g \;+\; 0.10\,T_\mathrm{db}.
+  \label{eq:wbgt_outdoor}
+\end{equation}
+
+For \emph{indoor or fully shaded} conditions (roofed stadiums, no direct
+solar radiation):
+\begin{equation}
+  \mathrm{WBGT}_m
+    \;=\; 0.70\,T_\mathrm{nwb} \;+\; 0.30\,T_\mathrm{db}.
+  \label{eq:wbgt_indoor}
+\end{equation}
+
+When only standard meteorological station data are available
+(temperature, relative humidity, dewpoint, solar irradiance),
+$T_\mathrm{nwb}$ and $T_g$ may be estimated using the empirical models
+of \citet{Liljegren2008}.
+
+\medskip
+\textbf{Key action thresholds.}
+FIFPRO guidelines~\citep{FIFPRO2025} define:
+
+\begin{center}
+\begin{tabular}{@{}lp{8cm}@{}}
+\toprule
+WBGT & Required action \\
+\midrule
+$\geq 26\,^\circ$C & Mandatory cooling breaks every 15~minutes \\
+$\geq 28\,^\circ$C & Match postponement recommended \\
+$\geq 32\,^\circ$C & Extreme risk; immediate action required \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\textbf{2026 context.}
+\citet{MullanEtAl2025} analyse ERA5 reanalysis climatology (2003--2022)
+for all 16 host cities and find that 14 of 16 cities frequently exceed
+$28\,^\circ$C WBGT in afternoon slots.  Six venues---Atlanta, Dallas,
+Houston, Kansas City, Miami (USA), and Monterrey (Mexico)---are rated
+``extremely high risk'' by FIFPRO~\citep{FIFPRO2025}.  Only five of the
+16 stadiums (Atlanta, Dallas, Houston, Los Angeles, Vancouver) possess
+a retractable roof or climate-control system, meaning structural
+mitigation is unavailable at most
+venues~\citep{WorldWeatherAttribution2026}.
+
+\subsection{Background: Altitude and Acclimatisation}
+
+Two Mexican venues present a distinct physiological challenge.
+Mexico City (Estadio Azteca) sits at approximately 2{,}240~m above sea
+level; Guadalajara (Estadio Akron) at approximately 1{,}560~m.  At such
+altitudes, the partial pressure of oxygen is reduced.  Under the base-camp model, a team playing at altitude must
+complete a round trip $b_i \!\to\! v_{i,k} \!\to\! b_i$ for each
+high-altitude match, so the acclimatisation demand is determined by the
+elevation differential between $b_i$ and $v_{i,k}$, not between
+consecutive venues.  FIFA's sports-medicine guidelines recommend a
+minimum of ten days at elevations above 3{,}000~m; even moderate
+elevations of 1{,}500$+$~m can reduce aerobic performance within a
+standard three-day rest window.
+
+\subsection{KPIs}
+
+% ----- KPI 2.1 -----
+\begin{kpibox}{KPI~2.1 \textendash{} Tournament WBGT Heat-Stress Score}
+
+\kpilabel{Description.}
+The aggregate heat-stress load across all 72 group-stage matches.
+For each match we compute the expected WBGT at the scheduled venue,
+date, and kickoff time using
+equations~\eqref{eq:wbgt_outdoor}--\eqref{eq:wbgt_indoor} and site
+climatology~\citep{Liljegren2008}.  The KPI also reports exceedance
+counts at the three FIFPRO action thresholds.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  H_{\mathrm{total}} &= \sum_{m \in M} \mathrm{WBGT}_m.
+\end{align*}
+Threshold exceedance counts (to be reported separately):
+\begin{align*}
+  N_{26} &= \bigl|\{m \in M : \mathrm{WBGT}_m \geq
+            26\,^\circ\text{C}\}\bigr|,\\
+  N_{28} &= \bigl|\{m \in M : \mathrm{WBGT}_m \geq
+            28\,^\circ\text{C}\}\bigr|,\\
+  N_{32} &= \bigl|\{m \in M : \mathrm{WBGT}_m \geq
+            32\,^\circ\text{C}\}\bigr|.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Primary objective: $\;\displaystyle\min_{S}\;N_{28}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Liljegren2008} (WBGT formula); \citet{FIFPRO2025} (thresholds);
+\citet{MullanEtAl2025} (2026 climatology);
+\citet{WorldWeatherAttribution2026}.
+\end{kpibox}
+
+% ----- KPI 2.2 -----
+\begin{kpibox}{KPI~2.2 \textendash{} Per-Team Heat Load}
+
+\kpilabel{Description.}
+The cumulative excess WBGT exposure absorbed by each team across its
+three group-stage matches, measured above the 28\,$^\circ$C safety
+threshold.  Because opponents are fixed by the draw, the schedule can
+still allocate high-risk matches to cooler (evening) slots or covered
+venues.  This KPI identifies which teams bear a disproportionately large
+heat burden, enabling a fairness assessment analogous to KPI~1.2.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{HL}_i &= \sum_{k=1}^{3}
+    \max\!\bigl(0,\;\mathrm{WBGT}_{m(i,k)} - \tau\bigr),
+  \qquad \tau = 28\,^\circ\text{C}.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Fairness (minimax) objective:
+$\;\displaystyle\min_{S}\;\max_{i \in T}\,\mathrm{HL}_i$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{FIFPRO2025}; \citet{MullanEtAl2025}; \citet{Liljegren2008}.
+\end{kpibox}
+
+% ----- KPI 2.3 -----
+\begin{kpibox}{KPI~2.3 \textendash{} Roof and Climate-Control Conditioning Ratio}
+
+\kpilabel{Description.}
+The fraction of safety-threshold-exceeding matches that are assigned to
+roofed or climate-controlled venues.  A covered stadium eliminates the
+solar radiation term in equation~\eqref{eq:wbgt_outdoor}, switching to
+the safer indoor WBGT formula~\eqref{eq:wbgt_indoor} and substantially
+reducing player heat exposure.  With only five covered venues hosting a
+minority of group fixtures, this KPI quantifies how effectively the
+schedule exploits available structural mitigation.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{CCR} &= \frac{\bigl|\{m \in M :
+      \mathrm{WBGT}_m \geq 28\,^\circ\text{C}
+      \;\text{and}\; v(m) \in R\}\bigr|}
+    {\bigl|\{m \in M : \mathrm{WBGT}_m \geq
+      28\,^\circ\text{C}\}\bigr|}
+  \;\in\; [0,1].
+\end{align*}
+Complementary unmitigated exposure:
+\begin{align*}
+  \mathrm{UHE} &= \sum_{\substack{m \in M \\ v(m)\notin R}}
+    \max\!\bigl(0,\;\mathrm{WBGT}_m - 28\bigr).
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\max_{S}\;\mathrm{CCR}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{FIFPRO2025}; \citet{Liljegren2008};
+\citet{WorldWeatherAttribution2026}.
+CCR definition is original (this work).
+\end{kpibox}
+
+% ----- KPI 2.4 -----
+\begin{kpibox}{KPI~2.4 \textendash{} Altitude Disruption Index}
+
+\kpilabel{Description.}
+Under the base-camp model, each match $k$ requires a round trip
+$b_i \!\to\! v_{i,k} \!\to\! b_i$.  The acclimatisation demand is
+therefore proportional to the elevation differential between the base
+camp and the match venue.  Mexico City ($\approx$2{,}240~m) and
+Guadalajara ($\approx$1{,}560~m) versus sea-level US venues impose
+an acclimatisation burden not captured by distance or rest-day metrics.
+A threshold of 500~m is applied before the penalty begins, reflecting
+the negligible physiological impact of modest elevation differences;
+above this, the penalty increases linearly.  The sum runs from $k=1$
+to $k=3$ since every match generates an independent round trip under
+the base-camp model, analogously to KPI~1.1.
+
+\medskip
+\kpilabel{Formula.}
+Define the penalisation function
+\begin{align*}
+  f(\Delta e) &= \frac{\max(0,\;\Delta e - 500)}{1000},
+  \qquad \Delta e \text{ in metres,}
+\end{align*}
+so the penalty is zero below 500~m and increases linearly above it.
+Then:
+\begin{align*}
+  \mathrm{ALT}_i &= \sum_{k=1}^{3}
+    f\!\bigl(|\mathrm{elev}(v_{i,k}) - \mathrm{elev}(b_i)|\bigr).
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+When $\mathrm{elev}(b_i)$ is unavailable, the median elevation of
+FIFA-approved base-camp cities for team $i$'s association may be used
+as a conservative estimate.
+Objective: $\;\displaystyle\min_{S}\;\max_{i \in T}\,\mathrm{ALT}_i$.
+
+\medskip
+\kpilabel{Reference.}
+FIFA Sports Medicine Commission (altitude guidelines);
+\citet{MullanEtAl2025}.
+Penalisation function $f(\cdot)$ and base-camp adaptation are original
+(this work).
+\end{kpibox}
+
+% =================================================================
+%  5.  CRITERION 3: COMPETITIVE INTEGRITY
+% =================================================================
+\section{Criterion 3: Competitive Integrity}
+
+\subsection{Background: Collusion Risk in Group Tournaments}
+\label{sec:collusion}
+
+\textbf{What is collusion?}
+In a round-robin group stage, the teams that play the \emph{final} match
+of their group already know the complete standings table before kick-off.
+If a particular result---one that may differ from the honest-play
+outcome---allows \emph{both} teams to advance simultaneously, there is
+an incentive to engineer that result cooperatively.  The most notorious
+historical instance is the 1982 FIFA World Cup ``Disgrace of
+Gij\'{o}n'': in the final round of Group~2, West Germany and Austria
+played a second match knowing that a 1--0 German win would eliminate
+Algeria despite Algeria having beaten West Germany.  The match ended
+with exactly that scoreline after minimal on-field effort from both
+sides.
+
+\textbf{Why the $16 \times 3$ format was scrapped.}
+FIFA's original plan for the 48-team tournament used 16 groups of three
+teams.  \citet{Guyon2020} showed rigorously that this format generates
+a collusion probability far exceeding that of any prior World Cup
+because every group's final match is a two-team game where both clubs
+know the standings after only two played matches.  Following widespread
+academic and public criticism, FIFA in March 2023 adopted the
+$12 \times 4$ format~\citep{FIFA2023Format}.
+\citet{GuajardoKrumer2023, GuajardoKrumer2024} propose concrete schedule
+constructions for this format that satisfy non-collusion, rest symmetry,
+and no dead-rubbers simultaneously.
+
+\textbf{The structural fix.}
+Playing both matches of a group's final round \emph{simultaneously}
+means no team can condition its behaviour on the real-time result of
+the other match.  This is a hard scheduling constraint, not merely a
+soft objective.
+
+\subsection{Background: Dead Rubbers and Stakeless Matches}
+\label{sec:deadrubber}
+
+A match is \emph{stakeless} (colloquially a ``dead rubber'') if at
+least one team is indifferent to the result---because it has already
+secured qualification, is already eliminated, or cannot alter its
+group-stage position regardless of the outcome.  Stakeless matches
+undermine sporting integrity because teams lacking incentives may field
+weakened line-ups or exert reduced effort, producing results that
+distort the third-place rankings used to select additional qualifiers.
+
+\citet{CsatoEtAl2024} and \citet{CsatoGyimesi2025} distinguish three
+severity levels:
+\begin{itemize}[noitemsep, topsep=4pt]
+  \item \emph{Competitive}: both teams have a meaningful stake.
+  \item \emph{Weakly stakeless}: one team is indifferent.
+  \item \emph{Strongly stakeless}: both teams are indifferent.
+\end{itemize}
+These are weighted $0$, $0.5$, and $1.0$ respectively in KPI~3.2.
+
+\subsection{Background: First-Mover Advantage in Round-Robins}
+\label{sec:firstmover}
+
+In a four-team round-robin group, the schedule specifies not only
+\emph{which} teams play each other, but the \emph{order} in which they
+do so across three rounds.  Each round consists of two matches; within
+each round, one match is played first (earlier kickoff) and one second
+(later kickoff).  \citet{KrumerEtAl2017} prove, in a three-player
+sequential round-robin model where each match is a complete-information
+all-pay auction, that the team competing in the \emph{first match of
+the first round} has the highest subgame-perfect equilibrium win
+probability (0.35 vs.\ 0.30 for the player who does not participate in
+Round~1 at all).  The mechanism is informational: a strong early result
+reduces uncertainty and shifts the strategic incentives of later rounds
+in favour of the team that opened well.
+
+For the 2026 four-team group stage, the final round is played
+simultaneously (KPI~3.1), eliminating the first-mover effect in
+Round~3.  The ordering advantage is therefore confined to Rounds~1
+and~2, where one match within each round precedes the other and the
+earlier-playing team observes fewer pending results when deciding its
+strategic effort level.
+
+\subsection{KPIs}
+
+% ----- KPI 3.1 -----
+\begin{kpibox}{KPI~3.1 \textendash{} Final-Round Simultaneity Compliance}
+
+\kpilabel{Description.}
+A binary indicator confirming whether each group's two final-round
+matches kick off at the same time, the structural safeguard against
+collusion established in the $12 \times 4$ format
+(Section~\ref{sec:collusion}).  This KPI is primarily a compliance
+verification measure; it should take its maximum value of~12 under any
+valid 2026 schedule, and any deviation constitutes a critical design
+flaw.
+
+\medskip
+\kpilabel{Formula.}
+For group $g$ with final-round matches $m_1$ and $m_2$:
+\begin{align*}
+  \mathrm{SIM}_g &=
+    \mathbf{1}\!\bigl[s(m_1) = s(m_2)\bigr].
+\end{align*}
+Tournament compliance score:
+$\;\mathrm{SIM}_{\mathrm{tot}} =
+\displaystyle\sum_{g \in G}\mathrm{SIM}_g \;\in\;\{0,\ldots,12\}$.
+\\[4pt]
+Hard constraint: $\mathrm{SIM}_g = 1$ for all $g \in G$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Guyon2020}; \citet{GuajardoKrumer2024}; \citet{FIFA2023Format}.
+\end{kpibox}
+
+% ----- KPI 3.2 -----
+\begin{kpibox}{KPI~3.2 \textendash{} Expected Stakeless Match Rate}
+
+\kpilabel{Description.}
+The probability-weighted fraction of final-round matches that are
+stakeless (Section~\ref{sec:deadrubber}), computed by Monte Carlo
+simulation of group outcomes using FIFA/Elo team-strength ratings.
+The three-class weighting of \citet{CsatoGyimesi2025} penalises strongly
+stakeless matches twice as heavily as weakly stakeless ones.
+
+\medskip
+\kpilabel{Formula.}
+Simulate $N_{\mathrm{sim}}$ group-stage outcomes from an Elo-based
+match-result model.  For each final-round match $m$ and each
+replicate $r$, classify the match as competitive ($\mathcal{C}$),
+weakly stakeless ($\mathcal{W}$), or strongly stakeless ($\mathcal{S}$).
+The weighted stakeless rate is:
+\begin{align*}
+  \mathrm{WSL} &= \frac{1}{N_{\mathrm{sim}}}
+    \sum_{r=1}^{N_{\mathrm{sim}}}
+    \frac{\displaystyle\sum_{m \in M_{\mathrm{final}}}
+      \Bigl[
+        0 \cdot \mathbf{1}_{\mathcal{C}}^{(r)}(m)
+        + 0.5 \cdot \mathbf{1}_{\mathcal{W}}^{(r)}(m)
+        + 1 \cdot \mathbf{1}_{\mathcal{S}}^{(r)}(m)
+      \Bigr]}
+    {|M_{\mathrm{final}}|},
+\end{align*}
+where $M_{\mathrm{final}}$ is the set of third-round group matches
+($|M_{\mathrm{final}}| = 24$).\\[4pt]
+Objective: $\;\displaystyle\min_{S}\;\mathrm{WSL}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{CsatoEtAl2024}; \citet{CsatoGyimesi2025} (weighting scheme
+$0/0.5/1$); \citet{GuajardoKrumer2024}.
+\end{kpibox}
+
+% ----- KPI 3.3 -----
+\begin{kpibox}{KPI~3.3 \textendash{} Round-Order Balance Index (First-Mover)}
+
+\kpilabel{Description.}
+Within a four-team round-robin group, the ordering of matches within
+each round confers a systematic advantage on teams that play the earlier
+kickoff (Section~\ref{sec:firstmover}).  \citet{KrumerEtAl2017} prove,
+for the three-player case, that the first-match competitor has the
+highest subgame-perfect equilibrium win probability.  For the 2026
+four-team group, only Rounds~1 and~2 are sequentially ordered; Round~3
+is simultaneous (KPI~3.1) and generates no first-mover effect.  This
+KPI measures the dispersion of round-order advantage scores across all
+48 teams: a lower value indicates that no subset of teams is
+systematically favoured by the kickoff ordering.
+
+\medskip
+\kpilabel{Formula.}
+For each group $g$ and each non-simultaneous round $r \in \{1,2\}$,
+let $m_{g,r}^{(1)}$ and $m_{g,r}^{(2)}$ denote the two matches in
+that round ordered by kickoff time:
+$s\!\bigl(m_{g,r}^{(1)}\bigr) < s\!\bigl(m_{g,r}^{(2)}\bigr)$.
+Define the binary first-mover indicator for team $i \in g$:
+\begin{align*}
+  \mathrm{pos}(i,r) &= \mathbf{1}\!\Bigl[
+    \text{team } i \text{ plays in }
+    m_{g(i),\,r}^{(1)}\Bigr]
+  \;\in\; \{0,1\},
+\end{align*}
+so $\mathrm{pos}(i,r)=1$ if team $i$ plays the \emph{earlier} match
+of round $r$ and $\mathrm{pos}(i,r)=0$ otherwise.  The positional
+advantage score is:
+\begin{align*}
+  a_i &= \sum_{r=1}^{2} \mathrm{pos}(i,r) \;\in\; \{0,1,2\}.
+\end{align*}
+$a_i = 2$: team plays first in both non-simultaneous rounds (maximum
+first-mover benefit).  $a_i = 0$: team plays second in both (minimal
+benefit).  A perfectly balanced schedule gives $a_i = 1$ for all
+$i \in T$, yielding:
+\begin{align*}
+  \mathrm{FMB} &= \sigma\!\bigl(\{a_i : i \in T\}\bigr) = 0.
+\end{align*}
+Objective: $\;\displaystyle\min_{S}\;\mathrm{FMB}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{KrumerEtAl2017}; \citet{CsatoEtAl2024}.  See also
+\citet{Russell1980} (carry-over effect value) and
+\citet{CavdarogluAtan2022} (integrated scheduling model).
+Definition of $\mathrm{pos}(i,r)$ and extension to four-team groups
+are original (this work).
+\end{kpibox}
+
+% =================================================================
+%  6.  CRITERION 4: OPERATIONAL EFFICIENCY
+% =================================================================
+\section{Criterion 4: Operational Efficiency}
+
+\subsection{Overview}
+
+Operational efficiency concerns the logistical load on the 16 host
+venues and the convenience of in-person attendance.  Venue
+overload---too many matches within a short window---degrades pitch
+quality, exhausts grounds-crew and security capacity, and strains local
+transport infrastructure.  Same-city scheduling conflicts split local
+resources and create confusion for fans.  These concerns are secondary
+to welfare and integrity, but they affect the experience of the
+approximately 6.5~million expected group-stage attendees and the host
+cities' ability to fulfil their delivery commitments.
+
+\subsection{KPIs}
+
+% ----- KPI 4.1 -----
+\begin{kpibox}{KPI~4.1 \textendash{} Venue-Load Balance}
+
+\kpilabel{Description.}
+The evenness of the distribution of group-stage matches across the 16
+host venues.  A schedule that concentrates fixtures in a few stadiums
+while leaving others underused creates operational strain at the busy
+venues and reduces economic impact at the quiet ones.  The coefficient
+of variation (CV) provides a scale-free measure of dispersion.
+
+\medskip
+\kpilabel{Formula.}
+Let $n_v$ be the number of group-stage matches at venue $v$.  Then:
+\begin{align*}
+  \mathrm{VLB} &= \frac{\sigma(\{n_v : v \in V\})}
+                       {\mu(\{n_v : v \in V\})}.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\mathrm{VLB}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{RibeiroUrrutia2007} (venue-load balancing objectives in
+tournament scheduling).  Application to the 16-venue 2026 format is
+original (this work).
+\end{kpibox}
+
+% ----- KPI 4.2 -----
+\begin{kpibox}{KPI~4.2 \textendash{} Fan Accessibility and Same-City Overlap}
+
+\kpilabel{Description.}
+Captures two related operational concerns.  First,
+\emph{same-city overlap} counts instances where two matches occur in
+the same city on the same day, potentially straining transport, security,
+and hospitality resources beyond single-match capacity.  Second, the
+\emph{fan accessibility index} measures the feasibility of supporters
+following a team to all three group-stage venues within a geographically
+reasonable distance threshold.
+
+\medskip
+\kpilabel{Formula.}
+Same-city overlap count:
+\begin{align*}
+  \mathrm{SCO} &= \sum_{\substack{m,m'\in M \\ m < m'}}
+    \mathbf{1}\!\bigl[\mathrm{city}(m)=\mathrm{city}(m')
+    \;\wedge\; d(m)=d(m')\bigr].
+\end{align*}
+Fan accessibility index for team $i$, with threshold $\bar{d}$ (e.g.,
+$\bar{d}=500$~km, approximately one day's drive):
+\begin{align*}
+  \mathrm{FA}_i &= \sum_{k=1}^{2}
+    \mathbf{1}\!\bigl[\mathrm{dist}(v_{i,k},v_{i,k+1})
+    \leq \bar{d}\bigr].
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\mathrm{SCO}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{KendallEtAl2010}; \citet{RibeiroUrrutia2007}.
+Application is original (this work).
+\end{kpibox}
+
+% =================================================================
+%  7.  CRITERION 5: BROADCAST ATTRACTIVENESS
+% =================================================================
+\section{Criterion 5: Broadcast Attractiveness and Commercial Value}
+
+\subsection{Overview}
+
+FIFA's broadcast rights for the 2026 World Cup are projected to exceed
+\$11~billion in total revenue.  Kickoff-time allocation is consequently
+one of the most commercially sensitive scheduling decisions.  The primary
+driver is European prime time (19:00--23:00 CET), which simultaneously
+represents the world's largest football audience and---for US East Coast
+venues---a midday kickoff that coincides with peak heat.  This criterion
+explicitly models broadcast and commercial value as potential antagonists
+of Criteria~1 and~2, enabling a transparent Pareto trade-off analysis.
+
+\subsection{KPIs}
+
+% ----- KPI 5.1 -----
+\begin{kpibox}{KPI~5.1 \textendash{} Prime-Time Alignment Score}
+
+\kpilabel{Description.}
+The audience-weighted share of group-stage match hours that fall within
+the prime-time window of key broadcasting markets.
+\citet{RibeiroUrrutia2007} formalise broadcast objectives jointly with
+scheduling fairness in the context of the Brazilian national league,
+providing the methodological foundation for this KPI.
+
+\medskip
+\kpilabel{Formula.}
+Let $\mathcal{R}$ be the set of key markets, $\mathrm{pop}_r$ the
+audience weight of market $r$, and $w_r(s) \in [0,1]$ the indicator
+(or fractional overlap) that kickoff slot $s$ falls within the
+prime-time window of market $r$:
+\begin{align*}
+  \mathrm{PT} &= \sum_{m \in M}\;\sum_{r \in \mathcal{R}}\;
+    \mathrm{pop}_r \cdot w_r\!\bigl(s(m)\bigr).
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\max_{S}\;\mathrm{PT}$,
+\emph{subject to} heat and rest constraints from C1 and C2.
+
+\medskip
+\kpilabel{Reference.}
+\citet{RibeiroUrrutia2007}.
+\end{kpibox}
+
+% ----- KPI 5.2 -----
+\begin{kpibox}{KPI~5.2 \textendash{} Marquee-Match Slot Quality and Overlap Penalty}
+
+\kpilabel{Description.}
+Not all matches carry equal broadcast value.  Matches between high-ranked
+teams, group deciders in the final round, and high-interest regional
+rivalries command disproportionate audience attention.  This KPI
+combines (a)~the global slot quality of high-profile matches and
+(b)~a penalty for scheduling two high-profile matches simultaneously,
+which splits the global audience~\citep{RibeiroUrrutia2007}.
+
+\medskip
+\kpilabel{Formula.}
+Define the slot quality $q(s) =
+\sum_{r \in \mathcal{R}} \mathrm{pop}_r \cdot w_r(s)$ (as in KPI~5.1).
+For a match between teams $i$ and $j$, define a match-value score
+$\mu_{ij} = (E_i^{-1} + E_j^{-1})/2$ (higher for stronger teams).
+Then the marquee-match slot quality is:
+\begin{align*}
+  \mathrm{MSQ} &= \sum_{m \in M} \mu_{ij(m)} \cdot
+    q\!\bigl(s(m)\bigr).
+\end{align*}
+Simultaneous high-profile match penalty ($P \subseteq M$):
+\begin{align*}
+  \mathrm{OVL} &= \sum_{\substack{m,m'\in P \\ m < m'}}
+    \mathbf{1}\!\bigl[s(m) = s(m')\bigr].
+\end{align*}
+Net objective: $\;\displaystyle\max_{S}\;
+\bigl(\mathrm{MSQ} - \lambda \cdot \mathrm{OVL}\bigr)$,
+\quad $\lambda > 0$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{RibeiroUrrutia2007}; \citet{GuajardoKrumer2024}.
+Original composite (this work).
+\end{kpibox}
+
+% ----- KPI 5.3 -----
+\begin{kpibox}{KPI~5.3 \textendash{} Host-City Economic Equity}
+
+\kpilabel{Description.}
+Host cities bear significant upfront costs---security, infrastructure,
+permitting---while FIFA retains broadcast and ticketing revenue.  Their
+economic return depends heavily on the commercial quality (prime-time
+status, high-profile matches) of fixtures allocated to them.  This KPI
+measures how equitably high-value matches are distributed across the 16
+venues using the Gini coefficient as a normalised dispersion measure.
+
+\medskip
+\kpilabel{Formula.}
+Define the commercial value of venue $v$:
+$\mathrm{VC}_v = \sum_{m:\,v(m)=v}
+q\!\bigl(s(m)\bigr)\cdot\mu_{ij(m)}$.  Then:
+\begin{align*}
+  \mathrm{HCE} &= 1 \;-\;
+    \mathrm{Gini}\!\bigl(\{\mathrm{VC}_v : v \in V\}\bigr)
+  \;\in\; [0,1].
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+A value of~1 indicates perfectly equal commercial value distribution.
+Objective: $\;\displaystyle\max_{S}\;\mathrm{HCE}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{RibeiroUrrutia2007} (fairness of match allocation).
+Gini coefficient: standard reference.  Application is original
+(this work).
+\end{kpibox}
+
+% =================================================================
+%  8.  COMPOSITE / CROSS-CRITERIA KPIs
+% =================================================================
+\section{Composite and Cross-Criteria KPIs}
+\label{sec:composite}
+
+Single-criterion KPIs support granular analysis but can obscure the
+overall burden borne by a team or the global fairness of the schedule.
+The five composite KPIs below aggregate across criteria to provide
+integrative measures.  All normalise
+component KPIs to $[0,1]$ to enable principled trade-off weighting.
+
+% ----- C1 -----
+\begin{kpibox}{C1 \textendash{} Recovery-Adjusted Hardship Index (RAHI)}
+
+\kpilabel{Description.}
+A single per-team score combining the four binding welfare burdens:
+travel distance (KPI~1.1, formulated under the base-camp round-trip
+model), jet-lag cost (KPI~1.3), heat load (KPI~2.2), and rest
+(KPI~1.5, entering negatively because more rest reduces hardship).
+All components are normalised to $[0,1]$ and combined via
+user-specified weights.  This is the flagship single-objective measure
+for comparing alternative schedules.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{RAHI}_i \;=\;
+    \alpha \cdot \frac{\mathrm{TD}_i}{\max_{i'}\mathrm{TD}_{i'}}
+    + \beta \cdot \frac{\mathrm{JL}_i}{\max_{i'}\mathrm{JL}_{i'}}
+    + \gamma \cdot \frac{\mathrm{HL}_i}{\max_{i'}\mathrm{HL}_{i'}}
+    - \delta \cdot \frac{\sum_k g_{i,k}}
+                        {\max_{i'}\sum_k g_{i',k}},
+\end{align*}
+with $\alpha,\beta,\gamma,\delta \geq 0$ and
+$\alpha + \beta + \gamma + \delta = 1$.
+Default weights: $\alpha = 0.30$, $\beta = 0.20$, $\gamma = 0.30$,
+$\delta = 0.20$.\\[4pt]
+Minimax objective (protect the worst-off team):
+$\;\displaystyle\min_{S}\;\max_{i \in T}\;\mathrm{RAHI}_i$.
+
+\medskip
+\kpilabel{Reference.}
+Components: \citet{Easton2001} (TD); \citet{Recht1995} (JL);
+\citet{Liljegren2008}, \citet{FIFPRO2025} (HL);
+\citet{AtanCavdaroglu2018} (rest).
+Composite formulation is original (this work).
+\end{kpibox}
+
+% ----- C2 -----
+\begin{kpibox}{C2 \textendash{} Schedule Fairness Index (SFI)}
+
+\kpilabel{Description.}
+Converts the per-team RAHI into a global distributional fairness
+statistic.  Jain's fairness index~\citep{Jain1984} was originally
+developed for network resource allocation and has since been widely
+adopted in computational fairness literature.  A value of~1 indicates
+all teams bear identical hardship; values below~1 signal concentration
+of hardship in a subset of teams.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{SFI} \;=\;
+    \frac{\Bigl(\displaystyle\sum_{i \in T}
+      \mathrm{RAHI}_i\Bigr)^2}
+         {|T|\cdot\displaystyle\sum_{i \in T} \mathrm{RAHI}_i^2}
+  \;\in\;\Bigl[\tfrac{1}{|T|},\;1\Bigr].
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\max_{S}\;\mathrm{SFI}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Jain1984}; \citet{GuajardoEtAl2026} (travel fairness).
+Application to schedule hardship is original (this work).
+\end{kpibox}
+
+% ----- C3 -----
+\begin{kpibox}{C3 \textendash{} Heat-Roof Mitigation Gap (HRMG)}
+
+\kpilabel{Description.}
+Quantifies avoidable heat exposure: the additional WBGT stress that
+could be eliminated by reassigning safety-threshold-exceeding matches to
+roofed venues or cooler (evening) slots, given the available covered
+infrastructure.  A large HRMG indicates the current schedule is failing
+to exploit structural mitigation, providing direct actionable insight
+for the optimised schedule.
+
+\medskip
+\kpilabel{Formula.}
+Let $\mathrm{WBGT}^*_m$ denote the counterfactual WBGT if match $m$
+were assigned to the best available roofed venue (using
+equation~\eqref{eq:wbgt_indoor}) or the latest evening slot on the same
+date.  Then:
+\begin{align*}
+  \mathrm{HRMG} &= \sum_{\substack{m \in M \\
+    \mathrm{WBGT}_m \geq 28}}
+    \max\!\bigl(0,\;\mathrm{WBGT}_m - \mathrm{WBGT}^*_m\bigr).
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\mathrm{HRMG}$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{FIFPRO2025}; \citet{Liljegren2008};
+\citet{WorldWeatherAttribution2026}.
+Composite formulation is original (this work).
+\end{kpibox}
+
+% ----- C4 -----
+\begin{kpibox}{C4 \textendash{} Welfare-Broadcast Tension Index (WBT)}
+
+\kpilabel{Description.}
+Explicitly quantifies the conflict between broadcast value (C5) and
+player welfare (C2): how much of the prime-time commercial value is
+generated by matches that breach the $28\,^\circ$C safety threshold.
+A schedule achieving high broadcast value while keeping matches in safe
+windows scores low; one that sacrifices welfare for TV ratings scores
+high.  This index supports a transparent Pareto analysis.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{WBT} &= \sum_{m \in M}
+    q\!\bigl(s(m)\bigr)\cdot
+    \mathbf{1}\!\bigl[\mathrm{WBGT}_m \geq 28\,^\circ\text{C}\bigr].
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Objective: $\;\displaystyle\min_{S}\;\mathrm{WBT}$,
+subject to an acceptable lower bound on $\mathrm{PT}$ from KPI~5.1.
+
+\medskip
+\kpilabel{Reference.}
+\citet{RibeiroUrrutia2007} (broadcast--fairness bicriteria framing);
+\citet{FIFPRO2025}.  Composite formulation is original (this work).
+\end{kpibox}
+
+% ----- C5 -----
+\begin{kpibox}{C5 \textendash{} Disruption-Robust Worst-Case Hardship (DRWH)}
+
+\kpilabel{Description.}
+The worst-team RAHI under the most adverse feasible single-match one-day
+perturbation.  North American summer conditions---severe thunderstorms,
+heat-related postponements---can force one-day slippage of individual
+fixtures.  This KPI asks: if any single match is displaced by one day,
+how much does the hardship of the worst-off team increase?  A small
+robustness premium indicates a schedule that degrades gracefully under
+disruption.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{DRWH} &= \max_{i \in T}\;
+    \max_{\delta \in \{-1,+1\},\;m \in M}\;
+    \mathrm{RAHI}_i\!\big|_{d(m)\,\leftarrow\,d(m)+\delta}.
+\end{align*}
+Robustness premium:
+$\;\mathrm{RP} = \mathrm{DRWH} - \max_{i \in T}\,\mathrm{RAHI}_i$.
+\\[4pt]
+Objective: $\;\displaystyle\min_{S}\;\mathrm{RP}$.
+
+\medskip
+\kpilabel{Reference.}
+Recoverable robustness: \citet{Liebchen2009};
+\citet{KendallEtAl2010}.  Application is original (this work).
+\end{kpibox}
+
+% =================================================================
+%  9.  ROBUSTNESS TO DISRUPTIONS
+% =================================================================
+\section{Robustness to Disruptions}
+
+Disruption risks in the 2026 group stage include severe thunderstorms
+(especially in the Central region), heat-related postponements at
+open-air venues, and potential flight delays from security or weather
+events.  A robust schedule is one in which a single-match one-day slip
+cannot violate any hard welfare constraint, particularly the rest floor.
+The single KPI below serves as a hygiene check: it should be satisfied
+by any feasible schedule but is worth verifying explicitly given the
+dense 17-day window.
+
+\begin{kpibox}{R1 \textendash{} Disruption-Robust Rest Margin}
+
+\kpilabel{Description.}
+The minimum rest available to any team under the worst feasible
+single-match one-day disruption.  If this value remains at or above the
+hard minimum of $g_{\min}=2$ rest days, the schedule is
+\emph{rest-robust}.
+
+\medskip
+\kpilabel{Formula.}
+\begin{align*}
+  \mathrm{RM} &= \min_{i \in T}\;\min_{k \in \{1,2\}}\;
+    \min_{\delta \in \{-1,+1\},\;m \in M}\;
+    g_{i,k}\!\big|_{d(m)\,\leftarrow\,d(m)+\delta}.
+\end{align*}
+\vspace{-8pt}
+
+\noindent
+Feasibility condition: $\;\mathrm{RM} \geq g_{\min} = 2$.
+
+\medskip
+\kpilabel{Reference.}
+\citet{Liebchen2009} (recoverable robustness).
+Application is original (this work).
+\end{kpibox}
+
+% =================================================================
+%  10.  SUMMARY TABLE
+% =================================================================
+\section{Summary of the KPI Framework}
+\label{sec:summary}
+
+Table~\ref{tab:summary} provides a consolidated reference for all
+25~KPIs defined in this report.
+
+\setlength{\LTpre}{8pt}
+\setlength{\LTpost}{6pt}
+
+\begin{longtable}{@{}p{0.9cm} p{4.6cm} p{2.8cm} p{1.2cm} p{4.0cm}@{}}
+\caption{Complete KPI framework for the 2026 FIFA World Cup
+         group-stage schedule evaluation.}
+\label{tab:summary}\\
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Criterion} &
+\textbf{Dir.} & \textbf{Primary Reference} \\
+\midrule
+\endfirsthead
+\multicolumn{5}{c}{\small\itshape Table~\ref{tab:summary}
+  \textendash{} continued from previous page.} \\[4pt]
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Criterion} &
+\textbf{Dir.} & \textbf{Primary Reference} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{5}{r}{\small\itshape Continued on next page.} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+1.1 & Total Travel Distance & Travel/Rest & $\min$ &
+      \citet{Easton2001} \\[2pt]
+1.2 & Intra-Group Travel Dispersion & Travel/Rest & $\min$ &
+      \citet{GuajardoEtAl2026} \\[2pt]
+1.3 & Circadian Shift Cost & Travel/Rest & $\min$ &
+      \citet{Recht1995} \\[2pt]
+1.4 & Match-Venue Geographic Dispersion & Travel/Rest & $\min$ &
+      \citet{MikamiTravel2026} \\[2pt]
+1.5 & Per-Team Rest Adequacy & Travel/Rest & $\max$ &
+      \citet{AtanCavdaroglu2018} \\[2pt]
+1.6 & Rest Asymmetry Between Opponents & Travel/Rest & $\min$ &
+      \citet{AtanCavdaroglu2018} \\[2pt]
+1.7 & Entry \& Visa Restriction Exposure & Travel/Rest & $\min$ &
+      Original (this work) \\
+\midrule
+2.1 & Tournament WBGT Score & Heat & $\min$ &
+      \citet{Liljegren2008} \\[2pt]
+2.2 & Per-Team Heat Load & Heat & $\min$ &
+      \citet{FIFPRO2025} \\[2pt]
+2.3 & Roof Conditioning Ratio & Heat & $\max$ &
+      \citet{FIFPRO2025} \\[2pt]
+2.4 & Altitude Disruption Index & Heat & $\min$ &
+      Original (this work) \\
+\midrule
+3.1 & Final-Round Simultaneity & Comp.\ Integrity & $\max$ &
+      \citet{Guyon2020} \\[2pt]
+3.2 & Expected Stakeless Match Rate & Comp.\ Integrity & $\min$ &
+      \citet{CsatoEtAl2024} \\[2pt]
+3.3 & Round-Order Balance Index & Comp.\ Integrity & $\min$ &
+      \citet{KrumerEtAl2017} \\
+\midrule
+4.1 & Venue-Load Balance & Operational & $\min$ &
+      \citet{RibeiroUrrutia2007} \\[2pt]
+4.2 & Fan Accessibility \& Same-City Overlap & Operational & $\min$ &
+      Original (this work) \\
+\midrule
+5.1 & Prime-Time Alignment Score & Broadcast & $\max$ &
+      \citet{RibeiroUrrutia2007} \\[2pt]
+5.2 & Marquee-Match Slot Quality & Broadcast & $\max$ &
+      \citet{RibeiroUrrutia2007} \\[2pt]
+5.3 & Host-City Economic Equity & Broadcast & $\max$ &
+      Original (this work) \\
+\midrule
+C1  & Recovery-Adjusted Hardship Index & Composite & $\min$ &
+      Original (this work) \\[2pt]
+C2  & Schedule Fairness Index & Composite & $\max$ &
+      \citet{Jain1984} \\[2pt]
+C3  & Heat-Roof Mitigation Gap & Composite & $\min$ &
+      Original (this work) \\[2pt]
+C4  & Welfare-Broadcast Tension Index & Composite & $\min$ &
+      Original (this work) \\[2pt]
+C5  & Disruption-Robust Worst-Case Hardship & Composite & $\min$ &
+      Original (this work) \\
+\midrule
+R1  & Disruption-Robust Rest Margin & Robustness & feasib. &
+      \citet{Liebchen2009} \\
+\end{longtable}
+
+% =================================================================
+%  BIBLIOGRAPHY
+% =================================================================
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\end{document}

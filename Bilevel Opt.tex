@@ -1,0 +1,684 @@
+% =================================================================
+%  bilevel.tex
+%  Bilevel scheduling model for the 2026 FIFA World Cup group stage
+%  CORS OR Challenge 2026 -- Team UofT Champions
+%
+%  Upper level: FIFA chooses the schedule (match -> slot, stadium).
+%  Lower level: each team chooses a base camp from a discrete
+%               approved set to minimise its own round-trip travel.
+%  Base-camp-dependent KPIs are evaluated at the team's best response.
+% =================================================================
+\documentclass[12pt, letterpaper]{article}
+
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage[T1]{fontenc}
+\usepackage[expansion=false]{microtype}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[hidelinks, breaklinks=true]{hyperref}
+
+\onehalfspacing
+\setlength{\parskip}{4pt}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\bld}[1]{\boldsymbol{#1}}
+\DeclareMathOperator*{\minimise}{minimise}
+\DeclareMathOperator*{\maximise}{maximise}
+
+\title{\textbf{A Bilevel Scheduling Framework for the 2026 FIFA World
+Cup Group Stage}\\[4pt]
+\large with Rational Base-Camp Selection}
+\author{Team UofT Champions \\ \small University of Toronto}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\section{Overview and Modelling Logic}
+
+FIFA fixes the schedule before any team selects a base camp; teams then
+choose a base camp \emph{in response} to the schedule they are given.
+We model this exactly as a \textbf{bilevel program}:
+
+\begin{itemize}[leftmargin=1.4em, itemsep=2pt]
+  \item \textbf{Upper level (leader, FIFA).} Choose the assignment of
+        the 72 matches to (time slot, stadium) pairs, subject to the
+        hard feasibility constraints of the released format. The
+        objective is a weighted sum of \emph{soft} KPI penalties.
+  \item \textbf{Lower level (followers, the 48 teams).} Given its three
+        venues and dates --- which are \emph{determined by the upper-level
+        schedule} --- each team independently selects one base camp from a
+        predetermined approved set $B_i$ so as to minimise its own
+        round-trip travel.
+\end{itemize}
+
+The base-camp-dependent KPIs (1.2, 1.3, 1.4, 2.4) are evaluated at the
+team's optimal response $b_i^\star(S)$, never at a base camp the team
+would not actually choose. Because the lower-level feasible set is
+\emph{finite and small} ($|B_i|$ candidate cities), we do not need KKT
+conditions or a continuous-bilevel reformulation. We replace each
+lower-level problem with (i) a selection constraint, and (ii) an
+\emph{optimality} (no-better-alternative) constraint that forces the
+chosen camp to be a minimiser. This yields a single-level mixed-integer
+linear program (MILP), exact for the discrete lower level.
+
+\bigskip
+The remaining base-camp-free KPIs in the chosen set (1.6, 1.7, 2.2, 3.3,
+4.1, 4.2, 5.1, 5.2, 5.3) enter the upper-level objective directly.
+
+% =================================================================
+\section{Sets, Indices, Parameters}
+
+\subsection*{Sets and indices}
+\begin{tabular}{@{}lp{11.2cm}@{}}
+\toprule
+$M$ & group-stage matches, $m\in M$, $|M|=72$ \\
+$T$ & time slots (date$\times$time), $t\in T$; $\tau_t$ is the
+      chronological time of $t$ in hours \\
+$S$ & host stadiums, $s\in S$, $|S|=16$ \\
+$I$ & national teams, $i\in I$, $|I|=48$ \\
+$G$ & groups, $g\in G$, $|G|=12$ \\
+$M_i\subset M$ & matches involving team $i$ ($|M_i|=3$) \\
+$M_g\subset M$ & matches of group $g$ ($|M_g|=6$) \\
+$M_g^{f}\subset M_g$ & the two final-round matches of group $g$ \\
+$T_r\subset T$ & slots of round $r\in\{1,2,3\}$ \\
+$S_c\subset S$ & stadiums in host country $c\in\{\mathrm{USA,MEX,CAN}\}$ \\
+$B_i$ & approved base-camp cities for team $i$ (discrete); index $b$ \\
+$\Omega=\bigcup_i B_i$ & set of distinct base-camp facilities; index $b$ \\
+$\Omega^{\mathrm{US}}\subseteq\Omega$ & US base-camp facilities \\
+$F^{\mathrm{ban}}\subseteq I$ & teams under a full US entry ban \\
+$F^{\mathrm{bond}}\subseteq I$ & teams under the US visa-bond programme \\
+$R\subseteq S$ & roofed / climate-controlled stadiums \\
+$S^{\mathrm{US}}\subseteq S$ & US stadiums \\
+$\mathcal{R}$ & key broadcast markets, index $\rho$ \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Parameters}
+\begin{tabular}{@{}lp{11.2cm}@{}}
+\toprule
+$\mathrm{dist}(b,s)$ & great-circle distance, base camp $b$ to stadium
+                       $s$ (km) \\
+$\mathrm{tz}(s),\,\mathrm{tz}(b)$ & UTC offset of stadium / base camp (h) \\
+$\mathrm{elev}(s),\,\mathrm{elev}(b)$ & elevation of stadium / base camp (m) \\
+$\mathrm{cl}(s)\in\{\mathrm{W,C,E}\}$ & FIFA cluster of stadium $s$ \\
+$\mathrm{ctry}(s)$ & host country of stadium $s$ \\
+$\theta_t$ & local kickoff clock time of slot $t$, hours in $[0,24)$ \\
+$W_{mt}$ & expected WBGT of match $m$ if played in slot $t$
+           (precomputed from venue climatology; venue is implied by $x$) \\
+$\sigma_i\in\{0,0.5,1\}$ & US entry/visa severity weight of team $i$
+                           (KPI 1.7) \\
+$E_i$ & FIFA/Elo rating of team $i$ (lower $=$ stronger) \\
+$\mu_m=(E_{i(m)}^{-1}+E_{j(m)}^{-1})/2$ & match value of $m$ \\
+$q_t=\sum_{\rho}\mathrm{pop}_\rho\,w_\rho(t)$ & broadcast slot quality of
+                       slot $t$ \\
+$\mathrm{pop}_\rho,\,w_\rho(t)$ & audience weight and prime-time overlap
+                       of market $\rho$ in slot $t$ \\
+$P\subseteq M$ & high-profile matches \\
+$\pi^{\mathrm{bond}}$ & US visa-bond base-camp penalty (km-equiv., KPI 1.7) \\
+$R_{\min}=72$, duration $105/60$ h & rest / match-length constants \\
+$N_c$ & mandated match count in country $c$ (52 / 10 / 10) \\
+\bottomrule
+\end{tabular}
+
+% =================================================================
+\section{Decision Variables}
+
+\paragraph{Upper level (schedule).}
+\begin{align}
+x_{mts} &=
+  \begin{cases} 1 & m \text{ in slot } t,\text{ stadium } s\\ 0 &
+  \text{else}\end{cases}
+  &&\forall m\in M,\,t\in T,\,s\in S,\\
+y_{gt} &=
+  \begin{cases} 1 & t \text{ is the final slot of group } g\\ 0 &
+  \text{else}\end{cases}
+  &&\forall g\in G,\,t\in T.
+\end{align}
+
+\paragraph{Lower level (base-camp response).}
+\begin{align}
+z_{ib} &=
+  \begin{cases} 1 & \text{team } i \text{ camps at } b\in B_i\\ 0 &
+  \text{else}\end{cases}
+  &&\forall i\in I,\,b\in B_i.
+\end{align}
+
+\paragraph{Auxiliary / linearization variables.}
+introduced where needed below; their meaning is stated at the point of
+use.
+
+% =================================================================
+\section{Hard Constraints (from \texttt{MIP.tex})}
+
+These are imposed exactly as in the team's feasibility model; we restate
+them in the present notation.
+
+\paragraph{H1 -- Each match scheduled once.}
+\begin{equation}
+\sum_{t\in T}\sum_{s\in S} x_{mts}=1 \qquad\forall m\in M.
+\end{equation}
+
+\paragraph{H2 -- Round-robin incidence.}
+\begin{equation}
+\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S} x_{mts}=3 \qquad\forall i\in I.
+\end{equation}
+
+\paragraph{H3 -- One match per team per round.}
+\begin{equation}
+\sum_{m\in M_i}\sum_{t\in T_r}\sum_{s\in S} x_{mts}=1
+  \qquad\forall i\in I,\;r\in\{1,2,3\}.
+\end{equation}
+
+\paragraph{H4 -- Stadium turnover.} A stadium hosts at most one match in
+any rolling window of length $\Delta_{\min}+105/60$:
+\begin{equation}
+\sum_{m\in M}\;\sum_{\substack{t'\in T\\ \tau_t\le\tau_{t'}<\tau_t+\Delta_{\min}+105/60}}
+  x_{mt's}\le 1 \qquad\forall s\in S,\,t\in T.
+\end{equation}
+
+\paragraph{H5 -- Minimum team rest (72 h kickoff-to-kickoff $+$ duration).}
+\begin{equation}
+\sum_{s} x_{mts}+\sum_{s} x_{m't's}\le 1
+  \quad
+  \begin{aligned}[t]
+  &\forall i\in I,\;\forall m,m'\in M_i,\,m\neq m',\\
+  &\forall t,t'\in T:\,|\tau_t-\tau_{t'}|<R_{\min}+105/60.
+  \end{aligned}
+\end{equation}
+
+\paragraph{H6 -- Host-nation venue restriction.}
+\begin{equation}
+\sum_{t\in T}\sum_{s\in S\setminus S_i} x_{mts}=0
+  \qquad\forall i\in H,\,m\in M_i.
+\end{equation}
+
+\paragraph{H7 -- Simultaneous final matches.}
+\begin{align}
+\sum_{t\in T} y_{gt}&=1 &&\forall g\in G,\\
+\sum_{m\in M_g}\sum_{s} x_{mts}&\ge 2\,y_{gt} &&\forall g\in G,\,t\in T,\\
+\sum_{m\in M_g}\sum_{s}\sum_{\substack{t'\in T\\ \tau_{t'}>\tau_t}} x_{mt's}
+  &\le 2\,(1-y_{gt}) &&\forall g\in G,\,t\in T.
+\end{align}
+
+\paragraph{H8 -- Match allocation by host country.}
+\begin{equation}
+\sum_{m\in M}\sum_{t\in T}\sum_{s\in S_c} x_{mts}=N_c
+  \qquad\forall c\in\{\mathrm{USA,MEX,CAN}\}.
+\end{equation}
+
+% =================================================================
+\section{The Lower Level and its Exact Linearization}
+\label{sec:lower}
+
+\subsection{Lower-level problem}
+Given the schedule, team $i$'s three venues are the stadiums on which its
+matches are played. The team chooses $b\in B_i$ to minimise its perceived
+round-trip travel cost (KPI 1.1), augmented by a US visa-bond penalty
+defined below:
+\begin{equation}
+b_i^\star \in \arg\min_{b\in B_i}\;
+  C_{ib}, \qquad
+  C_{ib}\;=\;\underbrace{2\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
+            \mathrm{dist}(b,s)\,x_{mts}}_{\text{round-trip travel}}
+            \;+\; P_{ib}.
+\label{eq:llcost}
+\end{equation}
+The travel term is \emph{linear} in $x$ (distances are constants; only
+the venue indicator $x$ is a variable); $P_{ib}$ is a constant
+visa-restriction penalty (\S\ref{sec:visa}), so the difficulty is not the
+cost expression but the $\arg\min$.
+
+\subsection{US entry restrictions on base-camp eligibility}
+\label{sec:visa}
+A team subject to US entry restrictions would not realistically site its
+base camp in the United States. We distinguish the two restriction tiers
+of KPI 1.7. Let $\Omega^{\mathrm{US}}\subseteq\Omega$ be the US
+facilities.
+
+\paragraph{Full-ban teams ($F^{\mathrm{ban}}$): hard exclusion.}
+A full entry suspension forecloses a US base entirely. For every
+$i\in F^{\mathrm{ban}}$ we forbid US camps:
+\begin{equation}
+z_{ib}=0 \qquad\forall i\in F^{\mathrm{ban}},\;
+  b\in B_i\cap\Omega^{\mathrm{US}}.
+\label{eq:banexcl}
+\end{equation}
+(Equivalently, US facilities are removed from $B_i$ in preprocessing; the
+constraint form is stated for transparency.) These teams are then
+\emph{required} to camp at a non-US facility, so $B_i$ must retain at
+least one Canadian or Mexican option for feasibility.
+
+\paragraph{Visa-bond teams ($F^{\mathrm{bond}}$): soft penalty.}
+Players and staff are exempt from the bond, so a US base remains
+physically possible but carries real financial and logistical friction.
+We discourage --- rather than forbid --- US camps for these teams via a
+constant additive penalty $\pi^{\mathrm{bond}}>0$ (in km-equivalent
+units, so it is commensurate with the travel term):
+\begin{equation}
+P_{ib}=
+  \begin{cases}
+  \pi^{\mathrm{bond}} & \text{if } i\in F^{\mathrm{bond}}
+    \text{ and } b\in\Omega^{\mathrm{US}},\\
+  0 & \text{otherwise.}
+  \end{cases}
+\label{eq:bondpen}
+\end{equation}
+Because $P_{ib}$ is a \emph{constant}, the penalised cost $C_{ib}$ in
+\eqref{eq:llcost} stays linear in $x$ and requires no new linearization;
+it enters the realised cost \eqref{eq:realcost} and the optimality cut
+\eqref{eq:condopt} unchanged, so the team genuinely weighs the bond
+friction when choosing. Setting $\pi^{\mathrm{bond}}$ larger than the
+maximum intra-set travel spread recovers the hard-exclusion behaviour as
+a limiting case; a moderate value lets a bond team still choose a US camp
+when the travel saving is large enough to outweigh the friction.
+
+\subsection{Selection and optimality constraints}
+We require exactly one camp per team:
+\begin{align}
+\sum_{b\in B_i} z_{ib} &= 1 &&\forall i\in I,\label{eq:selone}\\
+C_i^\star &= \sum_{b\in B_i} z_{ib}\, C_{ib}
+  &&\forall i\in I. \label{eq:realcost}
+\end{align}
+
+\subsection{Camp exclusivity (one team per facility)}
+\label{sec:exclusive}
+FIFA-approved base camps are physically exclusive: a facility hosts at
+most one team. Let $\Omega=\bigcup_i B_i$ be the set of distinct
+facilities. For each facility we impose
+\begin{equation}
+\sum_{i\,:\,b\in B_i} z_{ib} \;\le\; 1 \qquad\forall b\in\Omega.
+\label{eq:exclusive}
+\end{equation}
+
+\paragraph{Consequence: the optimality cut must be made conditional.}
+With exclusivity, the lower level is \emph{no longer} 48 independent
+problems --- it is a joint assignment of teams to a shared, congestible
+resource. A team can therefore be denied its unconstrained
+travel-minimiser when another team has claimed it. A \emph{hard}
+optimality cut $C_i^\star\le C_{ib}\ \forall b$ would then be
+\textbf{infeasible} precisely whenever two teams' minimisers coincide.
+We instead require optimality only among camps \emph{not taken by another
+team} (a no-justified-envy / stability condition):
+\begin{equation}
+C_i^\star \;\le\; C_{ib} \;+\;
+  \mathcal{M}\!\!\sum_{j\neq i\,:\,b\in B_j} z_{jb}
+  \qquad\forall i\in I,\;b\in B_i,
+\label{eq:condopt}
+\end{equation}
+where $\mathcal{M}$ is a valid big-$M$. If camp $b$ is unclaimed by any
+other team, the sum is $0$ and \eqref{eq:condopt} reduces to the ordinary
+cut $C_i^\star\le C_{ib}$, forcing team $i$ to beat $b$. If some team
+$j\neq i$ took $b$, the sum is $1$, the right-hand side becomes
+$C_{ib}+\mathcal{M}$, and the cut is deactivated --- team $i$ is not
+required to beat a camp it could not have. Together
+\eqref{eq:selone}--\eqref{eq:realcost}, \eqref{eq:exclusive} and
+\eqref{eq:condopt} make $z$ a \emph{stable} assignment: every team holds
+the cheapest camp still available to it given the others' choices.
+
+\paragraph{Choosing $\mathcal{M}$.} Any upper bound on a realised travel
+cost works; the tightest valid constant is
+\begin{equation}
+\mathcal{M} \;=\; \max_{i\in I}\Bigl(\max_{b\in B_i}C^{\mathrm{ub}}_{ib}
+  - \min_{b\in B_i}C^{\mathrm{lb}}_{ib}\Bigr),
+\end{equation}
+where $C^{\mathrm{ub}}_{ib}=2\sum_{k=1}^{3}\max_{s}\mathrm{dist}(b,s)$ and
+$C^{\mathrm{lb}}_{ib}=2\sum_{k=1}^{3}\min_{s}\mathrm{dist}(b,s)$ bound the
+realised cost over the team's three matches; both are constants, so
+$\mathcal{M}$ is precomputed. Using the difference rather than a raw cost
+keeps $\mathcal{M}$ as small as possible, tightening the LP relaxation.
+
+\paragraph{Modelling consequences.} Two points to record explicitly.
+(i)~\emph{Separability is lost}: because \eqref{eq:exclusive} couples the
+teams, the lower level can no longer be precomputed as a per-team table
+lookup --- the camp assignment is now solved jointly with the schedule
+inside the MILP. (ii)~Ties are still broken arbitrarily and remain
+harmless, since all KPIs depend on the chosen camp's coordinates, not on
+$z$ itself.
+
+\subsection{Linearizing the products in $C_{ib}$ and $C_i^\star$}
+\label{sec:bilinear}
+
+Two bilinear obstacles remain.
+
+\paragraph{(a) The travel part of $C_{ib}$ is linear in $x$ already.}
+Define the \emph{travel contribution} parameter
+$D_{ibs}=2\,\mathrm{dist}(b,s)$. Then
+\begin{equation}
+C_{ib}=\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S} D_{ibs}\,x_{mts}
+       \;+\; P_{ib},
+\qquad D_{ibs}=2\,\mathrm{dist}(b,s),
+\end{equation}
+which is linear ($P_{ib}$ is a constant); no work needed. Constraint
+\eqref{eq:condopt} is therefore already linear in $x$.
+
+\paragraph{(b) $C_i^\star=\sum_b z_{ib}C_{ib}$ is a product
+$z_{ib}\cdot x_{mts}$ (binary $\times$ binary).} We replace each product
+by an auxiliary variable
+\begin{equation}
+u_{ibmts}=z_{ib}\,x_{mts}\in\{0,1\},
+\end{equation}
+linearized by the standard McCormick envelope for a product of two
+binaries:
+\begin{equation}
+u_{ibmts}\le z_{ib},\quad
+u_{ibmts}\le x_{mts},\quad
+u_{ibmts}\ge z_{ib}+x_{mts}-1,\quad
+u_{ibmts}\ge 0.
+\label{eq:mccormick}
+\end{equation}
+Then
+\begin{equation}
+C_i^\star=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
+   D_{ibs}\,u_{ibmts}
+   \;+\;\sum_{b\in B_i} P_{ib}\,z_{ib}.
+\end{equation}
+The second sum is linear in $z$ ($P_{ib}$ constant), so the visa-bond
+penalty needs no product linearization.
+Because $z_{ib}$ and $x_{mts}$ are binary, \eqref{eq:mccormick} is
+\emph{exact} (the McCormick envelope is tight at binary endpoints), so no
+relaxation gap is introduced. To control model size we only generate
+$u_{ibmts}$ for $m\in M_i$ (team $i$'s own three matches), so the count is
+$\sum_i 3\,|B_i|\,|T|\,|S|$, which is modest.
+
+\medskip
+\emph{Remark (cheaper alternative).} The whole lower level can instead be
+\textbf{precomputed}: for each team and each candidate venue-triple,
+$\arg\min_b C_{ib}$ is a table lookup. Embedding it as
+\eqref{eq:selone}--\eqref{eq:condopt} is the in-model version we use so that
+base-camp KPIs feed back into the optimisation rather than being scored
+only after the fact.
+
+% =================================================================
+\section{Base-Camp-Dependent Soft KPIs}
+\label{sec:bc-kpi}
+
+All four are evaluated at $b_i^\star$ via $z$. To express a quantity ``at
+the chosen camp'' linearly, we use the same product-linearization device:
+for any camp-indexed constant $\kappa_{ib}$,
+\begin{equation}
+\widehat{\kappa}_i \;=\; \sum_{b\in B_i} z_{ib}\,\kappa_{ib}
+\label{eq:atchosen}
+\end{equation}
+is linear in $z$ because $\kappa_{ib}$ is constant. Quantities that also
+depend on the venue (hence on $x$) reuse $u_{ibmts}$.
+
+\subsection{KPI 1.2 -- Intra-Group Travel Dispersion}
+We use the realised total travel $C_i^\star$ (already defined). For group
+$g$ define the within-group range via $\max$/$\min$ epigraph variables:
+\begin{align}
+C^{\max}_g \ge C_i^\star,\quad
+C^{\min}_g \le C_i^\star &&\forall g\in G,\,i\in g,\\
+\Delta_g &= C^{\max}_g - C^{\min}_g &&\forall g\in G.
+\end{align}
+$\Delta_g\ge0$ automatically. (Linearizing $\max$/$\min$ by epigraph
+bounds is exact because we minimise $\sum_g\Delta_g$, which pushes
+$C^{\max}_g$ down and $C^{\min}_g$ up to the true extremes.) We use the
+\emph{range} form rather than the coefficient of variation because CV is a
+nonlinear ratio (see \S\ref{sec:nonlinkpi}). Penalty term:
+$\mathrm{KPI}_{1.2}=\sum_{g} \Delta_g$.
+
+\subsection{KPI 1.3 -- Circadian Shift Cost (Jet-Lag)}
+The perceived kickoff time depends on the venue's time-zone offset
+relative to the base camp, and the penalty $\phi(\cdot)$ is piecewise
+linear. We precompute, for every (team $i$, camp $b$, slot $t$, stadium
+$s$) the constant penalty
+\begin{equation}
+\Phi_{ibts}=\phi\!\Bigl(\bigl(\theta_t-[\mathrm{tz}(s)-\mathrm{tz}(b)]\bigr)\bmod 24\Bigr),
+\end{equation}
+since $\theta_t,\mathrm{tz}(s),\mathrm{tz}(b)$ are all parameters --- so the
+nonlinear mod-24 and the piecewise $\phi$ are evaluated \emph{offline} and
+enter as a constant. The team's jet-lag load is then
+\begin{equation}
+\mathrm{JL}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
+  \Phi_{ibts}\,u_{ibmts},
+\end{equation}
+linear via the same $u$ variables. Penalty:
+$\mathrm{KPI}_{1.3}=\sum_i \mathrm{JL}_i$ (or a minimax variant, below).
+
+\subsection{KPI 1.4 -- Match-Venue Geographic Dispersion}
+Cluster diversity $\mathrm{CC}_i$ does not require a base camp, but the
+border-crossing count does. We use the border-crossing form because it is
+the base-camp-dependent variant. Precompute the constant
+\begin{equation}
+\beta_{ibs}=\mathbf 1\!\left[\mathrm{ctry}(s)\neq\mathrm{ctry}(b)\right],
+\end{equation}
+giving
+\begin{equation}
+\mathrm{BC}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
+  \beta_{ibs}\,u_{ibmts}\in\{0,1,2,3\},
+\end{equation}
+again linear through $u$. Penalty: $\mathrm{KPI}_{1.4}=\sum_i \mathrm{BC}_i$.
+
+\subsection{KPI 2.4 -- Altitude Disruption Index}
+The penalty $f(\Delta e)=\max(0,\Delta e-500)/1000$ depends only on the
+\emph{constant} elevations of $b$ and $s$, so precompute
+\begin{equation}
+A_{ibs}=f\!\bigl(|\mathrm{elev}(s)-\mathrm{elev}(b)|\bigr),
+\end{equation}
+and set
+\begin{equation}
+\mathrm{ALT}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
+  A_{ibs}\,u_{ibmts}.
+\end{equation}
+The $\max(0,\cdot)$ inside $f$ is resolved offline (it is a function of
+constants), so no in-model $\max$ linearization is needed. Penalty
+(minimax form): introduce $\mathrm{ALT}^{\max}\ge \mathrm{ALT}_i\ \forall
+i$, penalise $\mathrm{ALT}^{\max}$.
+
+% =================================================================
+\section{Base-Camp-Free Soft KPIs}
+\label{sec:free-kpi}
+
+\subsection{KPI 1.6 -- Rest Asymmetry Between Opponents}
+Let $r_{mi}$ be the rest (in slots/days) of team $i$ before match $m$;
+this is a linear function of the slot variables. For match $m$ between
+$i,j$ we need $|r_{mi}-r_{mj}|$. Linearize the absolute value with a
+nonnegative epigraph variable:
+\begin{align}
+\mathrm{RD}_m &\ge r_{mi}-r_{mj}, &
+\mathrm{RD}_m &\ge r_{mj}-r_{mi}, &
+\mathrm{RD}_m&\ge 0.
+\end{align}
+Minimising $\sum_m\mathrm{RD}_m$ pulls $\mathrm{RD}_m$ down to the true
+absolute difference, so the relaxation is exact at optimum. For the
+\emph{count} objective $|\{m:\mathrm{RD}_m>0\}|$ introduce a binary
+$\delta_m$ with $\mathrm{RD}_m\le \bar R\,\delta_m$ ($\bar R$ a valid
+upper bound on the rest gap) and penalise $\sum_m\delta_m$. Penalty:
+$\mathrm{KPI}_{1.6}=\sum_m \mathrm{RD}_m$.
+
+\subsection{KPI 1.7 -- Entry \& Visa Restriction Exposure (ERI)}
+For match $m$ at stadium $s$, exposure occurs iff $s\in S^{\mathrm{US}}$,
+weighted by $\max(\sigma_{i(m)},\sigma_{j(m)})$ which is a \emph{constant}
+$\bar\sigma_m=\max(\sigma_{i(m)},\sigma_{j(m)})$ known from the draw.
+Hence
+\begin{equation}
+\mathrm{ERI}=\sum_{m\in M}\bar\sigma_m
+  \sum_{t\in T}\sum_{s\in S^{\mathrm{US}}} x_{mts},
+\end{equation}
+fully linear (the $\max$ is over constants, resolved offline). Penalty:
+$\mathrm{KPI}_{1.7}=\mathrm{ERI}$.
+
+\subsection{KPI 2.2 -- Per-Team Heat Load}
+$\mathrm{WBGT}$ at match $m$ depends on venue, date, and slot, all encoded
+by $x$; $W_{mt}$ (the WBGT if $m$ is played in slot $t$, at the stadium
+implied by $x$) is precomputed per (match, slot, stadium). The excess
+over $28^\circ$C uses a nonnegative epigraph variable $h_m$:
+\begin{align}
+h_m &\ge \sum_{t,s} W_{mts}\,x_{mts} - 28, & h_m &\ge 0,
+\end{align}
+so $h_m=\max(0,\mathrm{WBGT}_m-28)$ at optimum (minimising pushes $h_m$
+down to the bound). Team heat load $\mathrm{HL}_i=\sum_{m\in M_i} h_m$,
+and we penalise the minimax $\mathrm{HL}^{\max}\ge\mathrm{HL}_i$.
+
+\subsection{KPI 3.3 -- Round-Order Balance (First-Mover)}
+For each group $g$ and non-simultaneous round $r\in\{1,2\}$, the two
+matches are ordered by slot. Let $p_{ir}\in\{0,1\}$ indicate team $i$
+plays the \emph{earlier} match of round $r$. Within round $r$ of group
+$g$ exactly one of the two matches is earlier; define $p_{ir}$ via the
+slot variables: for the two matches $m_1,m_2\in M_g$ of round $r$,
+$p_{ir}=\sum_{t,s}\mathbf 1[\text{$m$ is the earlier slot}]\,x_{mts}$ for
+the match $m\ni i$. The positional score is $a_i=\sum_{r\in\{1,2\}}
+p_{ir}\in\{0,1,2\}$. We minimise the spread of $a_i$ via epigraph
+variables $a^{\max}\ge a_i\ge a^{\min}$ and penalise $a^{\max}-a^{\min}$
+(a linear surrogate for the standard deviation $\mathrm{FMB}$; see
+\S\ref{sec:nonlinkpi}). ``Earlier match'' indicators are themselves
+linearized with order binaries $o_{m m'}\in\{0,1\}$ and big-$M$ slot
+comparisons:
+\begin{equation}
+\tau_{t}-\tau_{t'} \le \mathcal M\,o_{mm'},\qquad
+\tau_{t'}-\tau_{t} \le \mathcal M\,(1-o_{mm'}),
+\end{equation}
+for the slots $t,t'$ chosen for $m,m'$ (themselves products with $x$,
+linearized as in \S\ref{sec:bilinear} if needed; in practice the
+round/slot structure fixes orderings combinatorially and $o$ can be read
+off without products).
+
+\subsection{KPI 4.1 -- Venue-Load Balance}
+Let $n_s=\sum_{m,t} x_{mts}$ be the match count at stadium $s$. We
+minimise the load \emph{range} (linear surrogate for the CV):
+\begin{align}
+n^{\max}\ge n_s,\quad n^{\min}\le n_s &&\forall s\in S,\qquad
+\mathrm{KPI}_{4.1}=n^{\max}-n^{\min}.
+\end{align}
+
+\subsection{KPI 4.2 -- Same-City Overlap \& Fan Accessibility}
+Same-city-same-day overlap is a product $x_{mts}x_{m't's}$-type term over
+matches sharing a city and date. Introduce $w_{mm'}\in\{0,1\}$ with
+\begin{equation}
+w_{mm'}\ge \xi_{m}+\xi_{m'}-1,\quad w_{mm'}\le \xi_m,\quad w_{mm'}\le
+\xi_{m'},
+\end{equation}
+where $\xi_m=\sum_{t\in T_d}\sum_{s\in S_{\text{city}}} x_{mts}$ indicates
+$m$ is in the given city on the given day (a linear sum of $x$). Then
+$\mathrm{SCO}=\sum_{\text{city},\,d}\sum_{m<m'} w_{mm'}$. Penalty:
+$\mathrm{KPI}_{4.2}=\mathrm{SCO}$.
+
+\subsection{KPI 5.1 -- Prime-Time Alignment}
+Slot quality $q_t$ is a constant. Maximising alignment:
+\begin{equation}
+\mathrm{PT}=\sum_{m\in M}\sum_{t\in T}\sum_{s\in S} q_t\, x_{mts},
+\end{equation}
+linear. Enter as $-\mathrm{PT}$ in the (minimisation) objective.
+
+\subsection{KPI 5.2 -- Marquee-Match Slot Quality \& Overlap}
+$\mathrm{MSQ}=\sum_{m}\mu_m\sum_{t,s} q_t x_{mts}$ (linear, $\mu_m$
+constant). Simultaneous high-profile penalty over $P$: for
+$m,m'\in P$, $\mathrm{OVL}\!:\ \pi_{mm'}\in\{0,1\}$ with
+$\pi_{mm'}\ge \zeta_{mt}+\zeta_{m't}-1$ summed over shared slots, where
+$\zeta_{mt}=\sum_s x_{mts}$. Net term: $-(\mathrm{MSQ}-\lambda\,
+\mathrm{OVL})$.
+
+\subsection{KPI 5.3 -- Host-City Economic Equity}
+Venue commercial value $\mathrm{VC}_s=\sum_{m,t}\mu_m q_t x_{mts}$ is
+linear. The Gini coefficient is nonlinear (\S\ref{sec:nonlinkpi}); we use
+the \emph{mean absolute difference} surrogate, which shares Gini's
+ordering and is linearizable:
+\begin{equation}
+\mathrm{MAD}=\sum_{s<s'} \eta_{ss'},\quad
+\eta_{ss'}\ge \mathrm{VC}_s-\mathrm{VC}_{s'},\;
+\eta_{ss'}\ge \mathrm{VC}_{s'}-\mathrm{VC}_s,\;\eta_{ss'}\ge0,
+\end{equation}
+and maximise equity by penalising $\mathrm{MAD}$. (Gini $=
+\mathrm{MAD}/(2\bar{\mathrm{VC}}\,|S|)$; with $\sum_s\mathrm{VC}_s$ fixed
+by the schedule's total value, minimising MAD aligns with maximising
+$\mathrm{HCE}$.)
+
+% =================================================================
+\section{Objective Function}
+
+All penalties are normalised to a common scale via precomputed bounds
+$\overline{K}$ (the maximum attainable value of each KPI, used as a
+divisor). The leader solves:
+\begin{align}
+\minimise_{x,y,z,u,\dots}\quad
+& \lambda_{1.2}\frac{\sum_g\Delta_g}{\overline{K}_{1.2}}
++ \lambda_{1.3}\frac{\sum_i\mathrm{JL}_i}{\overline{K}_{1.3}}
++ \lambda_{1.4}\frac{\sum_i\mathrm{BC}_i}{\overline{K}_{1.4}}
++ \lambda_{1.6}\frac{\sum_m\mathrm{RD}_m}{\overline{K}_{1.6}}
+\notag\\
+& + \lambda_{1.7}\frac{\mathrm{ERI}}{\overline{K}_{1.7}}
++ \lambda_{2.2}\frac{\mathrm{HL}^{\max}}{\overline{K}_{2.2}}
++ \lambda_{2.4}\frac{\mathrm{ALT}^{\max}}{\overline{K}_{2.4}}
++ \lambda_{3.3}\frac{a^{\max}-a^{\min}}{\overline{K}_{3.3}}
+\notag\\
+& + \lambda_{4.1}\frac{n^{\max}-n^{\min}}{\overline{K}_{4.1}}
++ \lambda_{4.2}\frac{\mathrm{SCO}}{\overline{K}_{4.2}}
+- \lambda_{5.1}\frac{\mathrm{PT}}{\overline{K}_{5.1}}
+- \lambda_{5.2}\frac{\mathrm{MSQ}-\lambda\,\mathrm{OVL}}{\overline{K}_{5.2}}
++ \lambda_{5.3}\frac{\mathrm{MAD}}{\overline{K}_{5.3}}
+\\[4pt]
+\text{s.t.}\quad
+& \text{H1--H8 (hard feasibility),}\notag\\
+& \text{\eqref{eq:selone}--\eqref{eq:condopt}, \eqref{eq:exclusive} (lower-level best response),}
+  \notag\\
+& \text{\eqref{eq:mccormick} (product linearization) and all KPI
+  epigraph / indicator constraints above,}\notag\\
+& x,y,z,u,\delta,o,w,\pi\in\{0,1\},\quad \text{epigraph vars}\ \ge 0.
+\notag
+\end{align}
+Maximised KPIs (5.1, 5.2) enter with a negative sign. The weights
+$\lambda_\bullet\ge0$ are set by the analyst; a $\sum\lambda=1$
+normalisation lets the same model trace a Pareto frontier by sweeping the
+weights.
+
+% =================================================================
+\section{Summary of Linearizations}
+\label{sec:nonlinkpi}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}p{2.0cm} p{4.6cm} p{6.4cm}@{}}
+\toprule
+\textbf{KPI} & \textbf{Nonlinearity} & \textbf{Linearization} \\
+\midrule
+Lower level & discrete $\arg\min_b$ with shared-camp exclusivity &
+  selection \eqref{eq:selone} $+$ exclusivity \eqref{eq:exclusive} $+$
+  conditional (big-$M$) optimality cut \eqref{eq:condopt}; yields a
+  stable assignment \\
+US entry restr.\ (1.7) & ban $=$ hard exclusion; bond $=$ friction &
+  fix $z_{ib}=0$ for $F^{\mathrm{ban}}$ on US camps; constant penalty
+  $\pi^{\mathrm{bond}}$ added to $C_{ib}$ for $F^{\mathrm{bond}}$ (stays
+  linear) \\
+$C_i^\star$, 1.3, 1.4, 2.4 & binary product $z_{ib}x_{mts}$ &
+  McCormick \eqref{eq:mccormick}; exact at binary endpoints \\
+1.2 & range $\max-\min$; CV ratio &
+  epigraph vars for $\max,\min$; \emph{range} used in place of CV \\
+1.3 / 2.4 & mod-24, piecewise $\phi$, $\max(0,\cdot)$ in $f$ &
+  evaluated \emph{offline} into constants $\Phi_{ibts}$, $A_{ibs}$ \\
+1.6 & absolute value $|r_{mi}-r_{mj}|$ &
+  two-sided epigraph $\mathrm{RD}_m\ge\pm(\cdot)$; binary $\delta_m$ for
+  the count form \\
+1.7 / 5.1 / 5.2 (MSQ) & $\max$ over constants; products with constants &
+  resolved offline; remain linear in $x$ \\
+2.2 & $\max(0,\mathrm{WBGT}-28)$ & nonneg.\ epigraph $h_m$ \\
+3.3 & ordering ``earlier match''; std.\ dev.\ $\mathrm{FMB}$ &
+  big-$M$ order binaries $o_{mm'}$; range $a^{\max}-a^{\min}$ surrogate
+  for std.\ dev. \\
+4.1 & CV of venue loads & range $n^{\max}-n^{\min}$ surrogate \\
+4.2 / 5.2 (OVL) & binary products (same city/day; same slot) &
+  McCormick on $w_{mm'},\pi_{mm'}$ \\
+5.3 & Gini coefficient &
+  mean-absolute-difference surrogate $\mathrm{MAD}$ with two-sided
+  epigraph $\eta_{ss'}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Why surrogates for CV / std.\ dev.\ / Gini.}
+The coefficient of variation (1.2, 4.1), the standard deviation (3.3),
+and the Gini coefficient (5.3) are all \emph{ratios or square roots} and
+are not MILP-representable without nonlinear (e.g.\ SOCP) machinery.
+Their \emph{range} and \emph{mean-absolute-difference} counterparts are
+piecewise-linear, share the same monotone ``more equal $\Rightarrow$
+smaller'' direction, and are standard fairness surrogates in the
+scheduling literature. If exact CV/Gini are required, the model becomes a
+MISOCP; we recommend the linear surrogates for tractability and report
+the exact CV/Gini \emph{post hoc} on the optimised schedule.
+
+\end{document}
