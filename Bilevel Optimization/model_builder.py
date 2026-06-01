@@ -1,5 +1,4 @@
 """
-Gurobi model builder for FIFA 2026 Bilevel Optimization
 Constructs the complete MILP model with all constraints and objective function
 """
 
