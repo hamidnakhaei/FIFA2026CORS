@@ -47,20 +47,26 @@ Six CSVs, all CSVs join on `team_id` or `venue_id`.
 
 ## 4. `base_camps.csv`
 
+62 FIFA candidate facilities (IDs 1–62) plus 17 confirmed team base camps that fell outside the candidate list (IDs 63–79). Confirmed assignments carry a `team_id`; unassigned candidates do not.
+
 | Column | Type | Description |
 |---|---|---|
-| `team_id` | str | Team identifier (joins → `teams.csv`) |
-| `city` | str | Confirmed base camp city |
-| `country` | str | Country of base camp city |
-| `lat` | float | City-centre latitude (decimal degrees) |
-| `lon` | float | City-centre longitude (decimal degrees) |
-| `utc_offset_june` | int | UTC offset during June (accounts for DST; sub-hour offsets rounded to nearest integer) |
+| `base_camp_id` | int | Unique facility ID; 1–62 match FIFA candidate list numbering, 63–79 are confirmed assignments outside that list |
+| `team_id` | str\|null | FIFA 3-letter team code if assigned, else empty (joins → `teams.csv`) |
+| `training_site` | str | Specific facility name (e.g. `Gonzaga University`, `Waters Sportsplex`) |
+| `city` | str | Municipality or region |
+| `country` | str | Host country (`USA` or `Mexico`) |
+| `lat` | float | Facility-level latitude, decimal degrees (Nominatim-geocoded where available, else hard-coded approximation) |
+| `lon` | float | Facility-level longitude, decimal degrees |
+| `utc_offset_june` | int | UTC offset during June (DST-adjusted; Arizona stays at −7 year-round; Mexico at −6 since abolishing DST in 2022) |
+
 
 ---
 
 ## 5. `weather.csv` — 6,528 rows
 
 Hourly temperature for every venue across the full group-stage window. Query by `venue_id` + `datetime` at match kickoff time (or average over match window).
+
 | Column | Type | Description |
 |---|---|---|
 | `venue_id` | str | Venue identifier (joins → `venues.csv`) |
