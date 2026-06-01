@@ -71,59 +71,6 @@ def run_with_custom_weights(weights_dict, time_limit=3600, mip_gap=0.01):
     return run_optimization(time_limit=time_limit, mip_gap=mip_gap)
 
 
-def analyze_data():
-    """
-    Analyze data without optimization (exploratory data analysis).
-    """
-    print("Analyzing data...\n")
-    
-    from data_loader import load_data
-    
-    data = load_data(DATA_DIR)
-    data.summary()
-    
-    print("\n" + "="*70)
-    print("DATA ANALYSIS")
-    print("="*70)
-    
-    # Group stats
-    print("\nTeams by Group:")
-    for group in sorted(data.teams_by_group.keys()):
-        teams = data.teams_by_group[group]
-        print(f"  Group {group}: {', '.join(teams)}")
-    
-    # Base camp stats
-    print(f"\nBase Camp Summary:")
-    print(f"  Total facilities: {len(data.base_camps)}")
-    
-    us_camps = data.get_camps_in_country("USA")
-    mex_camps = data.get_camps_in_country("MEX")
-    can_camps = data.get_camps_in_country("CAN")
-    
-    print(f"  USA facilities: {len(us_camps)}")
-    print(f"  Mexico facilities: {len(mex_camps)}")
-    print(f"  Canada facilities: {len(can_camps)}")
-    
-    # Venue stats
-    print(f"\nVenue Summary:")
-    print(f"  Total stadiums: {len(data.venues)}")
-    
-    us_venues = data.get_venues_in_country("USA")
-    mex_venues = data.get_venues_in_country("MEX")
-    can_venues = data.get_venues_in_country("CAN")
-    
-    print(f"  USA stadiums: {len(us_venues)}")
-    print(f"  Mexico stadiums: {len(mex_venues)}")
-    print(f"  Canada stadiums: {len(can_venues)}")
-    
-    # Match stats
-    print(f"\nMatch Summary:")
-    print(f"  Total matches: {len(data.matches)}")
-    print(f"  Matches per team: 3 (group stage)")
-    
-    print("\n" + "="*70 + "\n")
-
-
 def compare_scenarios(scenario_configs):
     """
     Run multiple optimization scenarios and compare results.
@@ -202,8 +149,6 @@ if __name__ == "__main__":
             run_optimization()
         elif command == "test":
             run_quick_test()
-        elif command == "analyze":
-            analyze_data()
         elif command == "compare":
             compare_scenarios(EXAMPLE_SCENARIOS)
         else:
@@ -211,7 +156,6 @@ if __name__ == "__main__":
             print("\nAvailable commands:")
             print("  optimize    Run full optimization (default)")
             print("  test        Quick test (load + build, no solve)")
-            print("  analyze     Data exploration and analysis")
             print("  compare     Compare multiple scenarios")
     else:
         # Default: run optimization

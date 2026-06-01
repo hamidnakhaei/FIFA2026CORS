@@ -70,49 +70,9 @@ def example_2_step_by_step():
 
 
 # ============================================================================
-# EXAMPLE 3: Data exploration
+# EXAMPLE 3: Modify configuration
 # ============================================================================
-def example_3_data_exploration():
-    """Explore and analyze the input data."""
-    print("\n" + "="*70)
-    print("EXAMPLE 3: Data Exploration")
-    print("="*70)
-    
-    data = load_data(DATA_DIR)
-    
-    # Get a specific team
-    team_id = "BRA"
-    print(f"\nTeam: {team_id}")
-    
-    matches = data.get_team_matches(team_id)
-    print(f"  Matches: {len(matches)}")
-    for i, match in enumerate(matches, 1):
-        print(f"    Match {i}: {match['team_a_id']} vs {match['team_b_id']} "
-              f"at {match['venue_id']} ({match['date']})")
-    
-    eligible_camps = data.get_team_eligible_camps(team_id)
-    print(f"  Eligible camps: {len(eligible_camps)}")
-    print(f"    IDs: {eligible_camps[:5]}...")  # Show first 5
-    
-    # Get group information
-    group = data.get_team_info(team_id)['group']
-    teams_in_group = data.get_group_teams(group)
-    print(f"\n  Group {group}: {teams_in_group}")
-    
-    # Check base camp distribution
-    print("\nBase Camp Geographic Distribution:")
-    us_camps = len(data.get_camps_in_country("USA"))
-    mex_camps = len(data.get_camps_in_country("MEX"))
-    can_camps = len(data.get_camps_in_country("CAN"))
-    print(f"  USA: {us_camps} facilities")
-    print(f"  Mexico: {mex_camps} facilities")
-    print(f"  Canada: {can_camps} facilities")
-
-
-# ============================================================================
-# EXAMPLE 4: Modify configuration
-# ============================================================================
-def example_4_custom_configuration():
+def example_3_custom_configuration():
     """Run optimization with custom settings."""
     print("\n" + "="*70)
     print("EXAMPLE 4: Custom Configuration")
@@ -142,9 +102,9 @@ def example_4_custom_configuration():
 
 
 # ============================================================================
-# EXAMPLE 5: Access solution details
+# EXAMPLE 4: Access solution details
 # ============================================================================
-def example_5_solution_details():
+def example_4_solution_details():
     """Access and inspect detailed solution information."""
     print("\n" + "="*70)
     print("EXAMPLE 5: Solution Details")
@@ -174,9 +134,9 @@ def example_5_solution_details():
 
 
 # ============================================================================
-# EXAMPLE 6: Compare different solver configurations
+# EXAMPLE 5: Compare different solver configurations
 # ============================================================================
-def example_6_solver_comparison():
+def example_5_solver_comparison():
     """Run solver with different time limits and compare."""
     print("\n" + "="*70)
     print("EXAMPLE 6: Solver Configuration Comparison")
@@ -217,9 +177,9 @@ def example_6_solver_comparison():
 
 
 # ============================================================================
-# EXAMPLE 7: Using different model builders
+# EXAMPLE 6: Using different model builders
 # ============================================================================
-def example_7_model_comparison():
+def example_6_model_comparison():
     """Compare basic vs. advanced model builders."""
     print("\n" + "="*70)
     print("EXAMPLE 7: Model Builder Comparison")
@@ -247,9 +207,9 @@ def example_7_model_comparison():
 
 
 # ============================================================================
-# EXAMPLE 8: Parameter inspection
+# EXAMPLE 7: Parameter inspection
 # ============================================================================
-def example_8_parameter_inspection():
+def example_7_parameter_inspection():
     """Inspect precomputed parameters."""
     print("\n" + "="*70)
     print("EXAMPLE 8: Parameter Inspection")
@@ -291,12 +251,11 @@ if __name__ == "__main__":
         examples = [
             example_1_basic_optimization,
             example_2_step_by_step,
-            example_3_data_exploration,
-            example_4_custom_configuration,
-            example_5_solution_details,
-            example_6_solver_comparison,
-            example_7_model_comparison,
-            example_8_parameter_inspection,
+            example_3_custom_configuration,
+            example_4_solution_details,
+            example_5_solver_comparison,
+            example_6_model_comparison,
+            example_7_parameter_inspection,
         ]
         
         if 1 <= example_num <= len(examples):
@@ -307,13 +266,12 @@ if __name__ == "__main__":
         print("\nAvailable examples:")
         print("  1. Basic optimization")
         print("  2. Step-by-step execution")
-        print("  3. Data exploration")
-        print("  4. Custom configuration")
-        print("  5. Solution details")
-        print("  6. Solver comparison")
-        print("  7. Model builder comparison")
-        print("  8. Parameter inspection")
-        print("\nUsage: python examples.py [1-8]")
+        print("  3. Custom configuration")
+        print("  4. Solution details")
+        print("  5. Solver comparison")
+        print("  6. Model builder comparison")
+        print("  7. Parameter inspection")
+        print("\nUsage: python examples.py [1-7]")
         
         # Run example 1 by default
         print("\nRunning Example 1 (basic optimization)...\n")
