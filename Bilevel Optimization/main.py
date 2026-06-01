@@ -1,122 +1,101 @@
 """
-Main entry points for FIFA 2026 Bilevel Optimization
-Provides convenient functions for common use cases
+Main entry points for FIFA 2026 Optimization + Simulation Framework
+
+Uses the new Opt+Sim approach as described in Opt+Sim.tex:
+1. Optimization phase: Schedule on base-camp-free KPIs + surrogate predictions
+2. Simulation phase: Greedy base-camp selection
+3. Guard mechanism: Accept only if simulated KPIs improve
 """
 
-from solver import FIFA2026Solver
 from config import DATA_DIR
 
 
-def run_optimization(time_limit=3600, mip_gap=0.01, verbose=True):
+# =================================================================
+# OPTIMIZATION+SIMULATION FUNCTIONS (Primary Framework)
+# =================================================================
+
+def run_optimization_optsim(time_limit=3600, max_iterations=10, verbose=True):
     """
-    Run the complete optimization pipeline.
+    Run the complete Optimization+Simulation pipeline.
+    
+    This is the PRIMARY framework as described in Opt+Sim.tex
+    
+    Algorithm:
+    1. Optimize schedule on base-camp-free KPIs + surrogate predictions
+    2. Simulate greedy base-camp selection process
+    3. Accept only if simulated KPIs improve (sim-in-the-loop guard)
+    4. Update surrogate model and repeat
     
     Args:
-        time_limit: Time limit in seconds (default 1 hour)
-        mip_gap: MIP optimality gap tolerance (default 1%)
+        time_limit: Total time limit in seconds (default 1 hour)
+        max_iterations: Maximum number of optimization iterations (default 10)
         verbose: Print progress output (default True)
     
     Returns:
-        Solution dictionary
+        Solution dictionary with:
+        - schedule: Optimized match schedule
+        - camp_assignment: Base camp assignments (from simulation)
+        - kpi_penalty: Final KPI penalty value
+        - iterations: Number of iterations run
+        - kpi_history: Penalty trajectory across iterations
     
-    Output Files (in 'output/' directory):
-        - optimized_schedule.xlsx: New schedule with optimized times/venues
-        - base_camp_assignments.xlsx: Base camp assignments for each team
+    Output Files:
+        - optimized_schedule_optsim.xlsx
+        - base_camp_assignments_optsim.xlsx
     """
-    solver = FIFA2026Solver(data_dir=DATA_DIR)
-    solution = solver.run_full_pipeline(time_limit=time_limit, mip_gap=mip_gap)
+    from solver_optsim import OptSimSolver
+    
+    solver = OptSimSolver(data_dir=DATA_DIR)
+    solution = solver.run_full_pipeline(
+        time_limit=time_limit,
+        max_iterations=max_iterations
+    )
     
     if solution:
         solver.print_solution_summary()
-        solver.save_solution("solution_output.txt")
+        solver.save_solution("solution_optsim.txt")
     
     return solution
 
 
-def run_quick_test():
+def run_quick_test_optsim():
     """
-    Quick test: load data and build model without solving.
+    Quick test: load data and build Opt+Sim model without solving.
     Useful for debugging and validation.
     """
-    print("Running quick test (data load + model build only)...\n")
+    print("Running quick test (Opt+Sim data load + model build only)...\n")
     
-    solver = FIFA2026Solver(data_dir=DATA_DIR)
+    from solver_optsim import OptSimSolver
+    
+    solver = OptSimSolver(data_dir=DATA_DIR)
     solver.load_data()
     solver.build_parameters()
     solver.build_model()
+    solver.initialize_simulation()
     
-    print("\n✓ Quick test complete. Model ready for solving.")
+    print("\n[OK] Quick test complete. Opt+Sim ready for optimization loop.")
     
     return solver
 
 
-def run_with_custom_weights(weights_dict, time_limit=3600, mip_gap=0.01):
+# =================================================================
+# DEFAULT ENTRY POINT
+# =================================================================
+
+def run_optimization(time_limit=3600, max_iterations=10, **kwargs):
     """
-    Run optimization with custom KPI weights.
+    Run optimization with Opt+Sim framework (main entry point).
     
     Args:
-        weights_dict: Dictionary mapping KPI IDs to weights
-                     Example: {1.2: 2.0, 1.3: 1.0, ...}
-        time_limit: Solver time limit
-        mip_gap: MIP gap tolerance
+        time_limit: Time limit in seconds
+        max_iterations: Maximum iterations for Opt+Sim loop
+        **kwargs: Additional framework-specific arguments
     
     Returns:
         Solution dictionary
     """
-    from config import KPI_WEIGHTS
-    
-    # Update weights
-    for kpi_id, weight in weights_dict.items():
-        if kpi_id in KPI_WEIGHTS:
-            KPI_WEIGHTS[kpi_id] = weight
-    
-    print(f"Running optimization with custom weights: {weights_dict}\n")
-    
-    return run_optimization(time_limit=time_limit, mip_gap=mip_gap)
+    return run_optimization_optsim(time_limit=time_limit, max_iterations=max_iterations, **kwargs)
 
-
-def compare_scenarios(scenario_configs):
-    """
-    Run multiple optimization scenarios and compare results.
-    
-    Args:
-        scenario_configs: List of dicts, each containing:
-                         {'name': str, 'weights': dict, 'time_limit': int, 'mip_gap': float}
-    
-    Returns:
-        Dictionary of results for each scenario
-    """
-    results = {}
-    
-    for config in scenario_configs:
-        scenario_name = config.get('name', 'Scenario')
-        weights = config.get('weights', {})
-        time_limit = config.get('time_limit', 3600)
-        mip_gap = config.get('mip_gap', 0.01)
-        
-        print(f"\n{'='*70}")
-        print(f"Running {scenario_name}...")
-        print(f"{'='*70}\n")
-        
-        solution = run_with_custom_weights(weights, time_limit, mip_gap)
-        results[scenario_name] = solution
-    
-    # Summary comparison
-    print(f"\n{'='*70}")
-    print("SCENARIO COMPARISON SUMMARY")
-    print(f"{'='*70}\n")
-    
-    for scenario_name, solution in results.items():
-        if solution:
-            print(f"{scenario_name}:")
-            print(f"  Objective: {solution['objective']:.2f}")
-            print(f"  Teams assigned: {solution['kpis']['num_teams_assigned']}")
-            print(f"  Solver time: {solution['solver_time']:.1f}s")
-        else:
-            print(f"{scenario_name}: NO SOLUTION FOUND")
-        print()
-    
-    return results
 
 
 # Example scenarios for comparison

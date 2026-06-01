@@ -669,6 +669,146 @@ normalisation lets the same model trace a Pareto frontier by sweeping the
 weights.
 
 % =================================================================
+\section{Alternative Solution Method: Simulated Base-Camp Choice
+with a Sim-in-the-Loop Guard}
+\label{sec:simloop}
+
+The exact bilevel model of \S\ref{sec:lower} rests on a strong behavioural
+assumption: every association selects its \emph{globally}
+travel-minimising camp, simultaneously, with full information. Real
+base-camp selection is sequential (teams that qualify or seed earlier
+choose first, from facilities still available) and need not be globally
+optimal. This section gives a tractable alternative that (i) replaces the
+in-MILP lower level with a \emph{deterministic greedy simulation} of the
+real selection process, and (ii) guarantees the schedule never drifts to
+a base-camp outcome worse than the incumbent, by placing the simulation
+\emph{inside the acceptance test}.
+
+\subsection{Why the simulation alone is not enough}
+A simulation is an \emph{evaluator}, not an optimiser: given a fixed
+schedule it returns the realised base-camp KPIs, but it cannot by itself
+steer the schedule search. If we merely optimised the schedule on
+base-camp-free terms and simulated camps once at the end, nothing would
+have pushed the schedule toward good camp outcomes --- the realised KPIs
+could be poor. We therefore (a) optimise the schedule on a
+\emph{calibrated surrogate} of the base-camp KPIs, and (b) accept a new
+schedule only if the \emph{simulated} KPIs actually improve. Step (b) is
+the guard that makes ``the result cannot get bad'' a structural property
+rather than a hope.
+
+\subsection{The deterministic greedy camp simulation
+$\mathrm{SIM}(\cdot)$}
+Fix a schedule $S$ (equivalently the venue assignment $a_{ms}$). Order the
+teams by a fixed priority $\rho(1),\rho(2),\dots,\rho(48)$ (e.g.\ seeding
+then qualification date --- the order in which associations confirm
+camps). Initialise the available-facility set $\mathcal A=\Omega$. For
+each team $i$ in priority order:
+\begin{enumerate}[leftmargin=1.6em, itemsep=1pt]
+  \item compute its three venues from $a_{ms}$;
+  \item among camps still available and \emph{eligible}
+        ($b\in B_i\cap\mathcal A$, excluding US camps if
+        $i\in F^{\mathrm{ban}}$), choose
+        \begin{equation}
+        b_i^{\mathrm{sim}}=\arg\min_{b\in B_i\cap\mathcal A}
+          \Bigl(2\!\sum_{m\in M_i}\sum_{s} \mathrm{dist}(b,s)\,a_{ms}
+                + P_{ib}\Bigr);
+        \end{equation}
+  \item set $\mathcal A\leftarrow\mathcal A\setminus\{b_i^{\mathrm{sim}}\}$
+        (exclusivity enforced by construction).
+\end{enumerate}
+The routine is $O(48\,\max_i|B_i|)$, deterministic, and reproducible. It
+returns the camp vector $b^{\mathrm{sim}}(S)$ and hence the realised
+base-camp KPI vector
+\begin{equation}
+K^{\mathrm{sim}}(S)=\bigl(\mathrm{KPI}_{1.2},\mathrm{KPI}_{1.3},
+\mathrm{KPI}_{1.4},\mathrm{KPI}_{2.4}\bigr)\bigl(b^{\mathrm{sim}}(S),S\bigr),
+\end{equation}
+each evaluated exactly as in \S\ref{sec:bc-kpi} but at the \emph{simulated}
+camps. Sequential greedy assignment models the real ``first come, first
+served'' process more faithfully than the simultaneous stable assignment
+of the exact model.
+
+\subsection{Calibrated surrogate for the schedule optimisation}
+\label{sec:surrogate}
+Inside the MILP we cannot call $\mathrm{SIM}$, so we optimise a linear
+surrogate $\widetilde K(S)$ built from \emph{camp-free} schedule features
+that predict the simulated KPIs:
+\begin{equation}
+\widetilde K(S)=\sum_{i\in I}\Bigl(
+  w_1\,\mathrm{CC}_i + w_2\,\mathrm{SP}_i
+  + w_3\,\mathrm{USL}_i\Bigr),
+\end{equation}
+where $\mathrm{CC}_i$ is venue-cluster diversity, $\mathrm{SP}_i=
+\sum_{s<s'} \mathrm{dist}(s,s')\,a_{\cdot s}a_{\cdot s'}$-type pairwise
+venue spread (linearised by the McCormick device on the two venue
+indicators), and $\mathrm{USL}_i$ is the team's US-venue load (relevant
+for visa-restricted teams). The coefficients $w=(w_1,w_2,w_3)$ are
+\emph{fitted by least squares} to $(\text{features},K^{\mathrm{sim}})$
+pairs collected from schedules visited so far, and refreshed each round.
+$\widetilde K$ is linear in $a$, so it drops straight into the
+upper-level objective of \S\ref{sec:lower} in place of the in-MILP
+base-camp terms; the lower-level variables
+$z,C^\star,\mathrm{JL},\mathrm{BC},\mathrm{ALT}$ and their constraints are
+removed entirely.
+
+\subsection{The sim-in-the-loop algorithm}
+Let $\Lambda(K)=\sum_\bullet \lambda_\bullet K_\bullet/\overline K_\bullet$
+be the normalised base-camp penalty (same weights/normalisers as the main
+objective). The guard accepts a candidate only if its \emph{simulated}
+penalty does not worsen.
+
+\begin{enumerate}[leftmargin=1.7em, itemsep=2pt]
+  \item \textbf{Initialise.} Solve the upper-level MILP with base-camp-free
+        KPIs only; call the schedule $S^{(0)}$. Run
+        $K^{\mathrm{sim}}(S^{(0)})$; set incumbent
+        $S^\star\!\leftarrow\!S^{(0)}$. Seed the regression with
+        $(S^{(0)},K^{\mathrm{sim}}(S^{(0)}))$ (and a few perturbations).
+  \item \textbf{Iterate} for $k=1,2,\dots$:
+    \begin{enumerate}[leftmargin=1.4em, itemsep=1pt]
+      \item \emph{Fit:} update $w$ by least squares on all
+            $(\text{features},K^{\mathrm{sim}})$ pairs seen so far.
+      \item \emph{Optimise:} solve the MILP (hard constraints H1--H8,
+            base-camp-free KPIs, plus surrogate $\widetilde K$ with current
+            $w$) to get candidate $S^{(k)}$. Add a no-good / proximity cut
+            to avoid revisiting incumbents.
+      \item \emph{Simulate:} run $K^{\mathrm{sim}}(S^{(k)})$ and store the
+            pair.
+      \item \emph{Guard (accept/reject):}
+            \begin{equation}
+            \text{accept } S^{(k)}\ \Longleftrightarrow\
+            \Lambda\bigl(K^{\mathrm{sim}}(S^{(k)})\bigr)\;\le\;
+            \Lambda\bigl(K^{\mathrm{sim}}(S^\star)\bigr)
+            \;-\;\epsilon,
+            \end{equation}
+            and the schedule's base-camp-free objective does not worsen by
+            more than a tolerance $\delta$. If accepted,
+            $S^\star\!\leftarrow\!S^{(k)}$.
+    \end{enumerate}
+  \item \textbf{Stop} when no accepting candidate is found in $\bar k$
+        consecutive rounds, or a time budget is hit. Return $S^\star$ and
+        its simulated camps $b^{\mathrm{sim}}(S^\star)$.
+\end{enumerate}
+
+\paragraph{Why the result cannot get bad.} The incumbent $S^\star$ is only
+ever replaced by a schedule whose \emph{simulated} base-camp penalty is
+strictly better (by $\epsilon$) and whose other objectives are within
+$\delta$. The sequence
+$\Lambda(K^{\mathrm{sim}}(S^\star))$ is therefore monotone
+non-increasing; the final schedule is no worse --- on the true
+simulated KPIs --- than the base-camp-free starting point, and typically
+much better. The surrogate only proposes; the simulation disposes. Note
+this guarantees \emph{improvement over the start}, not global optimality:
+the method is a heuristic, and we benchmark it against the exact bilevel
+model (\S\ref{sec:lower}) on a reduced instance to bound the gap.
+
+\paragraph{Cost and reproducibility.} Each round is one MILP solve plus
+one $O(48\max_i|B_i|)$ simulation; the lower-level binaries are gone, so
+each solve is far cheaper than the monolithic bilevel. Determinism of
+$\mathrm{SIM}$ makes the accept/reject decision --- and thus the whole run
+--- exactly reproducible, which a stochastic camp model would not provide
+without averaging over replications.
+
+% =================================================================
 \section{Summary of Linearizations}
 \label{sec:nonlinkpi}
 

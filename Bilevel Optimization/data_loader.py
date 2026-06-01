@@ -147,6 +147,19 @@ class DataLoader:
         camps = self.base_camps[self.base_camps['country'] == country]['base_camp_id'].tolist()
         return camps
     
+    def get_venues_in_country(self, country):
+        """
+        Get all venues (stadiums) in a specific country.
+        
+        Args:
+            country: Country name (e.g., 'USA', 'MEX', 'CAN')
+        
+        Returns:
+            List of venue IDs in the specified country
+        """
+        venues = self.venues[self.venues['country'] == country]['venue_id'].tolist()
+        return venues
+    
     def get_team_matches(self, team_id):
         """
         Get all matches for a specific team.

@@ -82,10 +82,33 @@ BIG_M_ORDER = 10000
 BIG_M_REST_GAP = 200  # Upper bound on rest difference (in hours)
 
 # =================================================================
+# Opt+Sim Algorithm Parameters
+# =================================================================
+
+# Maximum iterations for Opt+Sim loop
+OPTSIM_MAX_ITERATIONS = 10
+
+# Improvement threshold for accepting new schedule (fraction of incumbent penalty)
+OPTSIM_EPSILON = 0.01  # 1% improvement required
+
+# Allowed degradation in other objectives (fraction)
+OPTSIM_DELTA = 0.02  # 2% allowed degradation
+
+# Number of consecutive non-improving iterations before stopping
+OPTSIM_NO_IMPROVE_THRESHOLD = 3
+
+# Surrogate model regression: initial feature weights
+SURROGATE_INITIAL_WEIGHTS = [1.0, 1.0, 1.0]  # [CC, SP, USL]
+
+# Base-camp priority order (if None, uses alphabetical by team_id)
+# Example: TEAM_PRIORITY_ORDER = ['FRA', 'BRA', 'GER', ...]
+TEAM_PRIORITY_ORDER = None
+
+# =================================================================
 # Model Settings
 # =================================================================
 
-GUROBI_TIME_LIMIT = 3600  # Seconds
+GUROBI_TIME_LIMIT = 36000  # Seconds
 GUROBI_MIP_GAP = 0.01  # 1% optimality gap
 GUROBI_NUM_THREADS = 4
 # Verbosity: 0=off, 1=warning, 2=normal, 3=detailed, 4=maximum

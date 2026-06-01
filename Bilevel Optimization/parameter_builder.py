@@ -30,7 +30,6 @@ class ParameterBuilder:
         self.build_jet_lag_penalties()
         self.build_border_crossing_indicators()
         self.build_travel_contributions()
-        self.build_altitude_penalties()
         self.build_visa_penalties()
         self.build_big_m_values()
         return self.params
@@ -139,39 +138,6 @@ class ParameterBuilder:
         print(f"  Built travel contribution parameters")
         return D
     
-    def build_altitude_penalties(self):
-        """
-        Precompute altitude disruption penalties.
-        A[camp_id][venue_id] = max(0, |elev(venue) - elev(camp)| - 500) / 1000
-        (penalty is in units suitable for the objective function)
-        """
-        A = {}
-        
-        # First, build a lookup for camp elevations
-        camp_elevations = {}
-        for _, camp in self.data.base_camps.iterrows():
-            camp_id = camp['base_camp_id']
-            camp_elevations[camp_id] = camp.get('elevation', 0)
-        
-        for _, camp in self.data.base_camps.iterrows():
-            camp_id = camp['base_camp_id']
-            camp_elev = camp.get('elevation', 0)
-            
-            A[camp_id] = {}
-            
-            for _, venue in self.data.venues.iterrows():
-                venue_id = venue['venue_id']
-                venue_elev = venue.get('elevation', 0)
-                
-                # f(Delta_e) = max(0, |Delta_e| - 500) / 1000
-                elev_diff = abs(venue_elev - camp_elev)
-                penalty = max(0, elev_diff - 500) / 1000.0
-                
-                A[camp_id][venue_id] = penalty
-        
-        self.params['A'] = A
-        print(f"  Built altitude disruption penalties")
-        return A
     
     def build_visa_penalties(self):
         """
