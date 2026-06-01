@@ -95,7 +95,7 @@ GUROBI_VERBOSITY = 2
 # Data Paths
 # =================================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 MATCHES_FILE = DATA_DIR / "matches.csv"
 VENUES_FILE = DATA_DIR / "venues.csv"

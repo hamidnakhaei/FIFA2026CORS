@@ -6,9 +6,9 @@ Precomputes all parameters (distances, penalties, etc.) needed by the model
 import numpy as np
 from utils import (
     great_circle_distance, perceived_kickoff_time, jet_lag_penalty,
-    altitude_disruption, countries_differ, wbgt_excess_heat_load
+    countries_differ, wbgt_excess_heat_load
 )
-from config import ALTITUDE_THRESHOLD, ALTITUDE_PENALTY_SCALE, VISA_BOND_PENALTY, FULL_BAN_TEAMS, VISA_BOND_TEAMS
+from config import VISA_BOND_PENALTY, FULL_BAN_TEAMS, VISA_BOND_TEAMS
 
 
 class ParameterBuilder:
@@ -28,9 +28,9 @@ class ParameterBuilder:
         """Build all parameters."""
         self.build_distances()
         self.build_jet_lag_penalties()
-        self.build_altitude_penalties()
         self.build_border_crossing_indicators()
         self.build_travel_contributions()
+        self.build_altitude_penalties()
         self.build_visa_penalties()
         self.build_big_m_values()
         return self.params
@@ -40,7 +40,6 @@ class ParameterBuilder:
         Precompute great-circle distances between all camps and venues.
         dist[camp_id][venue_id] = distance in km
         """
-        print("Building distance parameters...")
         dist = {}
         
         for _, camp in self.data.base_camps.iterrows():
@@ -64,7 +63,6 @@ class ParameterBuilder:
         Precompute jet-lag penalties.
         Phi[team_id][camp_id][venue_id][slot_hour] = penalty in hours
         """
-        print("Building jet-lag penalty parameters...")
         Phi = {}
         
         for team_id in self.data.team_by_id.keys():
@@ -92,37 +90,12 @@ class ParameterBuilder:
         print(f"  Built jet-lag penalties for {len(Phi)} teams")
         return Phi
     
-    def build_altitude_penalties(self):
-        """
-        Precompute altitude disruption penalties.
-        A[camp_id][venue_id] = altitude penalty
-        """
-        print("Building altitude disruption parameters...")
-        A = {}
-        
-        for _, camp in self.data.base_camps.iterrows():
-            camp_id = camp['base_camp_id']
-            camp_elev = camp.get('elevation', 0)  # Assume 0 if not provided
-            
-            A[camp_id] = {}
-            
-            for _, venue in self.data.venues.iterrows():
-                venue_id = venue['venue_id']
-                venue_elev = venue.get('elevation', 0)  # Assume 0 if not provided
-                
-                penalty = altitude_disruption(venue_elev, camp_elev)
-                A[camp_id][venue_id] = penalty
-        
-        self.params['A'] = A
-        print(f"  Built altitude penalties for {len(A)} camps")
-        return A
     
     def build_border_crossing_indicators(self):
         """
         Precompute border-crossing indicators.
         beta[camp_id][venue_id] = 1 if different countries, 0 otherwise
         """
-        print("Building border-crossing indicators...")
         beta = {}
         
         for _, camp in self.data.base_camps.iterrows():
@@ -147,7 +120,6 @@ class ParameterBuilder:
         Precompute travel contribution (D parameter).
         D[team_id][camp_id][venue_id] = 2 * distance (for round trip)
         """
-        print("Building travel contribution parameters...")
         D = {}
         
         for team_id in self.data.team_by_id.keys():
@@ -167,12 +139,45 @@ class ParameterBuilder:
         print(f"  Built travel contribution parameters")
         return D
     
+    def build_altitude_penalties(self):
+        """
+        Precompute altitude disruption penalties.
+        A[camp_id][venue_id] = max(0, |elev(venue) - elev(camp)| - 500) / 1000
+        (penalty is in units suitable for the objective function)
+        """
+        A = {}
+        
+        # First, build a lookup for camp elevations
+        camp_elevations = {}
+        for _, camp in self.data.base_camps.iterrows():
+            camp_id = camp['base_camp_id']
+            camp_elevations[camp_id] = camp.get('elevation', 0)
+        
+        for _, camp in self.data.base_camps.iterrows():
+            camp_id = camp['base_camp_id']
+            camp_elev = camp.get('elevation', 0)
+            
+            A[camp_id] = {}
+            
+            for _, venue in self.data.venues.iterrows():
+                venue_id = venue['venue_id']
+                venue_elev = venue.get('elevation', 0)
+                
+                # f(Delta_e) = max(0, |Delta_e| - 500) / 1000
+                elev_diff = abs(venue_elev - camp_elev)
+                penalty = max(0, elev_diff - 500) / 1000.0
+                
+                A[camp_id][venue_id] = penalty
+        
+        self.params['A'] = A
+        print(f"  Built altitude disruption penalties")
+        return A
+    
     def build_visa_penalties(self):
         """
         Precompute visa penalties for base camps.
         P[team_id][camp_id] = penalty value
         """
-        print("Building visa penalty parameters...")
         P = {}
         
         # Get US camps
@@ -203,34 +208,30 @@ class ParameterBuilder:
         Calculate Big-M values for the model.
         Used for conditional constraints and linearizations.
         """
-        print("Building Big-M values...")
-        
         # Calculate M for camp exclusivity constraints
         # M should be large enough to deactivate optimality constraints
         M_exclusivity = 0
         
         for team_id in self.data.team_by_id.keys():
+            # Calculate total travel cost for each camp
+            camp_costs = {}
             for camp_id in self.data.eligible_camps_by_team[team_id]:
-                # Calculate upper bound on travel cost for this team-camp pair
-                max_cost = 0
-                for other_camp_id in self.data.eligible_camps_by_team[team_id]:
-                    # Min and max distances for this team-camp-pair
-                    for _, venue in self.data.venues.iterrows():
-                        venue_id = venue['venue_id']
-                        max_cost += self.params['D'][team_id][camp_id][venue_id]
+                cost = 0
+                for _, venue in self.data.venues.iterrows():
+                    venue_id = venue['venue_id']
+                    cost += self.params['D'][team_id][camp_id][venue_id]
                 
-                # Also add visa penalty
+                # Add visa penalty if applicable
                 if team_id in VISA_BOND_TEAMS:
-                    max_cost += VISA_BOND_PENALTY
+                    cost += VISA_BOND_PENALTY
                 
-                # Find cost range for this team
-                for comp_camp_id in self.data.eligible_camps_by_team[team_id]:
-                    min_cost = 0
-                    for _, venue in self.data.venues.iterrows():
-                        venue_id = venue['venue_id']
-                        min_cost += self.params['D'][team_id][comp_camp_id][venue_id]
-                    
-                    M_exclusivity = max(M_exclusivity, max_cost - min_cost)
+                camp_costs[camp_id] = cost
+            
+            # Find max cost difference for this team
+            if camp_costs:
+                max_cost = max(camp_costs.values())
+                min_cost = min(camp_costs.values())
+                M_exclusivity = max(M_exclusivity, max_cost - min_cost)
         
         # Ensure M is at least reasonably large
         M_exclusivity = max(M_exclusivity, 100000)

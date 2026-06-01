@@ -150,8 +150,11 @@ z_{ib} &=
 \end{align}
 
 \paragraph{Auxiliary / linearization variables.}
-introduced where needed below; their meaning is stated at the point of
-use.
+The principal auxiliaries are the \emph{venue-assignment} variable
+$a_{ms}=\sum_t x_{mts}$ (match $m$ at stadium $s$; \eqref{eq:ams}) and the
+continuous realised-cost / KPI variables $C_i^\star,\mathrm{JL}_i,
+\mathrm{BC}_i,\mathrm{ALT}_i\ge0$ pinned by big-$M$ indicators. Remaining
+epigraph and order variables are introduced at the point of use.
 
 % =================================================================
 \section{Hard Constraints (from \texttt{MIP.tex})}
@@ -216,21 +219,32 @@ any rolling window of length $\Delta_{\min}+105/60$:
 \section{The Lower Level and its Exact Linearization}
 \label{sec:lower}
 
-\subsection{Lower-level problem}
-Given the schedule, team $i$'s three venues are the stadiums on which its
-matches are played. The team chooses $b\in B_i$ to minimise its perceived
+\subsection{Lower-level problem and the venue-assignment variable}
+Every base-camp quantity --- travel, jet-lag, border crossings, altitude
+--- depends on \emph{which stadium} a team plays at, never on \emph{which
+slot}. Carrying the slot index $t$ through the lower level is therefore
+pure waste. We first project it out. Define the \emph{venue-assignment}
+variable
+\begin{equation}
+a_{ms}\;=\;\sum_{t\in T} x_{mts}\;\in\;\{0,1\}
+  \qquad\text{($m$ is played at stadium $s$),}
+\label{eq:ams}
+\end{equation}
+which is a linear function of the schedule; by H1, $\sum_s a_{ms}=1$.
+
+Given the schedule, team $i$ chooses $b\in B_i$ to minimise its perceived
 round-trip travel cost (KPI 1.1), augmented by a US visa-bond penalty
 defined below:
 \begin{equation}
 b_i^\star \in \arg\min_{b\in B_i}\;
   C_{ib}, \qquad
-  C_{ib}\;=\;\underbrace{2\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
-            \mathrm{dist}(b,s)\,x_{mts}}_{\text{round-trip travel}}
+  C_{ib}\;=\;\underbrace{2\sum_{m\in M_i}\sum_{s\in S}
+            \mathrm{dist}(b,s)\,a_{ms}}_{\text{round-trip travel}}
             \;+\; P_{ib}.
 \label{eq:llcost}
 \end{equation}
-The travel term is \emph{linear} in $x$ (distances are constants; only
-the venue indicator $x$ is a variable); $P_{ib}$ is a constant
+The travel term is \emph{linear} in $a$ (distances are constants; only
+the venue indicator $a_{ms}$ is a variable); $P_{ib}$ is a constant
 visa-restriction penalty (\S\ref{sec:visa}), so the difficulty is not the
 cost expression but the $\arg\min$.
 
@@ -270,8 +284,8 @@ P_{ib}=
 \label{eq:bondpen}
 \end{equation}
 Because $P_{ib}$ is a \emph{constant}, the penalised cost $C_{ib}$ in
-\eqref{eq:llcost} stays linear in $x$ and requires no new linearization;
-it enters the realised cost \eqref{eq:realcost} and the optimality cut
+\eqref{eq:llcost} stays linear in $a$ and requires no new linearization;
+it enters the realised cost (\S\ref{sec:bilinear}) and the optimality cut
 \eqref{eq:condopt} unchanged, so the team genuinely weighs the bond
 friction when choosing. Setting $\pi^{\mathrm{bond}}$ larger than the
 maximum intra-set travel spread recovers the hard-exclusion behaviour as
@@ -279,12 +293,14 @@ a limiting case; a moderate value lets a bond team still choose a US camp
 when the travel saving is large enough to outweigh the friction.
 
 \subsection{Selection and optimality constraints}
-We require exactly one camp per team:
+We require exactly one camp per team and let $C_i^\star$ denote team
+$i$'s realised cost (the cost at its chosen camp):
 \begin{align}
-\sum_{b\in B_i} z_{ib} &= 1 &&\forall i\in I,\label{eq:selone}\\
-C_i^\star &= \sum_{b\in B_i} z_{ib}\, C_{ib}
-  &&\forall i\in I. \label{eq:realcost}
+\sum_{b\in B_i} z_{ib} &= 1 &&\forall i\in I.\label{eq:selone}
 \end{align}
+$C_i^\star$ is pinned to the chosen camp's cost by the big-$M$ indicator
+constraints of \S\ref{sec:bilinear} --- not by the bilinear product
+$\sum_b z_{ib}C_{ib}$, which we deliberately avoid.
 
 \subsection{Camp exclusivity (one team per facility)}
 \label{sec:exclusive}
@@ -317,7 +333,7 @@ cut $C_i^\star\le C_{ib}$, forcing team $i$ to beat $b$. If some team
 $j\neq i$ took $b$, the sum is $1$, the right-hand side becomes
 $C_{ib}+\mathcal{M}$, and the cut is deactivated --- team $i$ is not
 required to beat a camp it could not have. Together
-\eqref{eq:selone}--\eqref{eq:realcost}, \eqref{eq:exclusive} and
+\eqref{eq:selone}, the realised-cost constraints (\S\ref{sec:bilinear}), \eqref{eq:exclusive} and
 \eqref{eq:condopt} make $z$ a \emph{stable} assignment: every team holds
 the cheapest camp still available to it given the others' choices.
 
@@ -341,72 +357,91 @@ inside the MILP. (ii)~Ties are still broken arbitrarily and remain
 harmless, since all KPIs depend on the chosen camp's coordinates, not on
 $z$ itself.
 
-\subsection{Linearizing the products in $C_{ib}$ and $C_i^\star$}
+\subsection{Realising the chosen-camp cost without products}
 \label{sec:bilinear}
 
-Two bilinear obstacles remain.
+The only remaining nonlinearity is the realised cost $C_i^\star$, which
+naively is the bilinear product $\sum_b z_{ib}C_{ib}$. The previous draft
+linearized it with a McCormick variable $u_{ibmts}=z_{ib}x_{mts}$ for
+every (team, camp, match, slot, stadium) tuple --- a count of
+$\sum_i 3|B_i|\,|T|\,|S|$ binaries. The factor $|T|\,|S|$ makes this the
+dominant part of the model and is what causes the blow-up. We remove it
+entirely with two changes.
 
-\paragraph{(a) The travel part of $C_{ib}$ is linear in $x$ already.}
-Define the \emph{travel contribution} parameter
-$D_{ibs}=2\,\mathrm{dist}(b,s)$. Then
+\paragraph{Step 1 --- collapse the slot index.} By \eqref{eq:ams} the
+travel cost already depends only on $a_{ms}$, not on $x_{mts}$. Writing
+$D_{ibs}=2\,\mathrm{dist}(b,s)$,
 \begin{equation}
-C_{ib}=\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S} D_{ibs}\,x_{mts}
-       \;+\; P_{ib},
-\qquad D_{ibs}=2\,\mathrm{dist}(b,s),
+C_{ib}=\sum_{m\in M_i}\sum_{s\in S} D_{ibs}\,a_{ms}+P_{ib},
+\label{eq:cibA}
 \end{equation}
-which is linear ($P_{ib}$ is a constant); no work needed. Constraint
-\eqref{eq:condopt} is therefore already linear in $x$.
+which is linear in $a$. This drops the slot factor $|T|$ before any
+linearization is attempted.
 
-\paragraph{(b) $C_i^\star=\sum_b z_{ib}C_{ib}$ is a product
-$z_{ib}\cdot x_{mts}$ (binary $\times$ binary).} We replace each product
-by an auxiliary variable
+\paragraph{Step 2 --- pin $C_i^\star$ with big-$M$ indicators, no product
+variables.} Rather than form $z_{ib}C_{ib}$, we introduce a single
+\emph{continuous} variable $C_i^\star\ge0$ per team and bound it below by
+the cost of the camp that is actually selected:
 \begin{equation}
-u_{ibmts}=z_{ib}\,x_{mts}\in\{0,1\},
+C_i^\star \;\ge\; C_{ib}\;-\;\mathcal{M}\,(1-z_{ib})
+  \qquad\forall i\in I,\;b\in B_i.
+\label{eq:cstar-ind}
 \end{equation}
-linearized by the standard McCormick envelope for a product of two
-binaries:
-\begin{equation}
-u_{ibmts}\le z_{ib},\quad
-u_{ibmts}\le x_{mts},\quad
-u_{ibmts}\ge z_{ib}+x_{mts}-1,\quad
-u_{ibmts}\ge 0.
-\label{eq:mccormick}
-\end{equation}
-Then
-\begin{equation}
-C_i^\star=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
-   D_{ibs}\,u_{ibmts}
-   \;+\;\sum_{b\in B_i} P_{ib}\,z_{ib}.
-\end{equation}
-The second sum is linear in $z$ ($P_{ib}$ constant), so the visa-bond
-penalty needs no product linearization.
-Because $z_{ib}$ and $x_{mts}$ are binary, \eqref{eq:mccormick} is
-\emph{exact} (the McCormick envelope is tight at binary endpoints), so no
-relaxation gap is introduced. To control model size we only generate
-$u_{ibmts}$ for $m\in M_i$ (team $i$'s own three matches), so the count is
-$\sum_i 3\,|B_i|\,|T|\,|S|$, which is modest.
+For the chosen camp ($z_{ib}=1$) this reads $C_i^\star\ge C_{ib}$; for
+every other camp ($z_{ib}=0$) the right-hand side is $\le 0$ and the
+constraint is vacuous. Because $C_i^\star$ appears with a minimising
+pressure --- it is itself a penalised KPI (1.2) and also the left-hand
+side of the optimality cut \eqref{eq:condopt} --- the solver drives it
+\emph{down} to exactly $C_{ib^\star}$, the chosen camp's cost. No upper
+bound is needed, and no $u$ variables are created. This is exact: at
+$z_{ib}\in\{0,1\}$ the constraint set \eqref{eq:cstar-ind} forces
+$C_i^\star=\min$ over selected camps, which equals the single selected
+cost by \eqref{eq:selone}.
+
+\paragraph{Variable count.} The lower level now uses $\sum_i|B_i|$ binary
+$z$ variables, the $|M|\,|S|$ shared $a$ variables (already implied by the
+schedule), and $|I|$ continuous $C^\star$ variables, with
+$\sum_i|B_i|$ indicator constraints \eqref{eq:cstar-ind}. Compared with
+the $\sum_i 3|B_i|\,|T|\,|S|$ binaries of the McCormick version, this is
+smaller by a factor of order $3|T|\,|S|$ --- typically three to four
+orders of magnitude --- and removes all product binaries from the lower
+level.
+
+\paragraph{The optimality cut is unchanged and still linear.} The cut
+\eqref{eq:condopt} compares $C_i^\star$ against the constants-and-$a$
+expression $C_{ib}$ of \eqref{eq:cibA}; both sides are linear in
+$(C^\star,a,z)$, so no further work is required.
 
 \medskip
-\emph{Remark (cheaper alternative).} The whole lower level can instead be
-\textbf{precomputed}: for each team and each candidate venue-triple,
-$\arg\min_b C_{ib}$ is a table lookup. Embedding it as
-\eqref{eq:selone}--\eqref{eq:condopt} is the in-model version we use so that
-base-camp KPIs feed back into the optimisation rather than being scored
-only after the fact.
+\emph{Remark.} The base-camp-dependent KPIs (1.3, 1.4, 2.4) are handled
+the same way: each is a per-team quantity of the form
+$\sum_s(\text{const})\,a_{ms}$ evaluated at the chosen camp, pinned by an
+indicator constraint identical in structure to \eqref{eq:cstar-ind}
+(\S\ref{sec:bc-kpi}). None requires product variables.
 
 % =================================================================
 \section{Base-Camp-Dependent Soft KPIs}
 \label{sec:bc-kpi}
 
-All four are evaluated at $b_i^\star$ via $z$. To express a quantity ``at
-the chosen camp'' linearly, we use the same product-linearization device:
-for any camp-indexed constant $\kappa_{ib}$,
+All four are evaluated at the chosen camp $b_i^\star$. Each is a per-team
+quantity of the form ``$\sum_s$ (a camp-and-stadium constant)
+$\times\,a_{ms}$, summed over the team's matches, taken at the selected
+camp.'' We express every one with a single continuous variable per team,
+pinned by a big-$M$ indicator constraint of the same form as
+\eqref{eq:cstar-ind} --- no product variables, no slot index. Concretely,
+for a per-team value $V_i$ built from camp-stadium constants
+$\gamma_{ibs}$,
 \begin{equation}
-\widehat{\kappa}_i \;=\; \sum_{b\in B_i} z_{ib}\,\kappa_{ib}
-\label{eq:atchosen}
+V_i \;\ge\; \sum_{m\in M_i}\sum_{s\in S}\gamma_{ibs}\,a_{ms}
+  \;-\;\mathcal{M}_V\,(1-z_{ib})
+  \qquad\forall i\in I,\;b\in B_i,
+\label{eq:vind}
 \end{equation}
-is linear in $z$ because $\kappa_{ib}$ is constant. Quantities that also
-depend on the venue (hence on $x$) reuse $u_{ibmts}$.
+with $\mathcal{M}_V$ a valid big-$M$ for that quantity. When $V_i$ is
+minimised (directly or via a minimax surrogate), the binding camp is
+$z_{ib}=1$ and $V_i$ is driven to the chosen camp's value; the other
+constraints are vacuous. This is exact and adds only $|B_i|$ constraints
+per team.
 
 \subsection{KPI 1.2 -- Intra-Group Travel Dispersion}
 We use the realised total travel $C_i^\star$ (already defined). For group
@@ -424,52 +459,57 @@ nonlinear ratio (see \S\ref{sec:nonlinkpi}). Penalty term:
 $\mathrm{KPI}_{1.2}=\sum_{g} \Delta_g$.
 
 \subsection{KPI 1.3 -- Circadian Shift Cost (Jet-Lag)}
-The perceived kickoff time depends on the venue's time-zone offset
-relative to the base camp, and the penalty $\phi(\cdot)$ is piecewise
-linear. We precompute, for every (team $i$, camp $b$, slot $t$, stadium
-$s$) the constant penalty
+Jet-lag is the one base-camp quantity that genuinely depends on the slot,
+because the perceived kickoff time mixes the venue's time-zone offset
+(relative to the base camp) with the local clock time $\theta_t$ of the
+slot. We therefore keep a slot-resolved penalty constant
 \begin{equation}
 \Phi_{ibts}=\phi\!\Bigl(\bigl(\theta_t-[\mathrm{tz}(s)-\mathrm{tz}(b)]\bigr)\bmod 24\Bigr),
 \end{equation}
-since $\theta_t,\mathrm{tz}(s),\mathrm{tz}(b)$ are all parameters --- so the
-nonlinear mod-24 and the piecewise $\phi$ are evaluated \emph{offline} and
-enter as a constant. The team's jet-lag load is then
+evaluated \emph{offline} (the mod-24 and piecewise $\phi$ are functions of
+parameters only). To avoid reintroducing the $z\!\cdot\!x$ product, we
+define the slot-resolved load on $x$ and pin it with the same indicator
+device:
 \begin{equation}
-\mathrm{JL}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
-  \Phi_{ibts}\,u_{ibmts},
+\mathrm{JL}_i \;\ge\;
+  \sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}\Phi_{ibts}\,x_{mts}
+  \;-\;\mathcal{M}_{\mathrm{JL}}(1-z_{ib})
+  \qquad\forall i\in I,\;b\in B_i.
 \end{equation}
-linear via the same $u$ variables. Penalty:
-$\mathrm{KPI}_{1.3}=\sum_i \mathrm{JL}_i$ (or a minimax variant, below).
+The right-hand sum is linear in $x$ ($\Phi_{ibts}$ constant); the
+indicator selects the chosen camp's row. This adds $|B_i|$ constraints
+per team and \emph{no} product variables --- the $|T|\,|S|$ cost lives in
+the constant $\Phi$, not in new binaries. Penalty:
+$\mathrm{KPI}_{1.3}=\sum_i \mathrm{JL}_i$ (or the minimax variant below).
 
 \subsection{KPI 1.4 -- Match-Venue Geographic Dispersion}
 Cluster diversity $\mathrm{CC}_i$ does not require a base camp, but the
 border-crossing count does. We use the border-crossing form because it is
-the base-camp-dependent variant. Precompute the constant
+the base-camp-dependent variant. Precompute the stadium constant
+$\beta_{ibs}=\mathbf 1[\mathrm{ctry}(s)\neq\mathrm{ctry}(b)]$. This is
+purely venue-dependent, so it collapses onto $a_{ms}$ and pins via
+\eqref{eq:vind}:
 \begin{equation}
-\beta_{ibs}=\mathbf 1\!\left[\mathrm{ctry}(s)\neq\mathrm{ctry}(b)\right],
+\mathrm{BC}_i \;\ge\; \sum_{m\in M_i}\sum_{s\in S}\beta_{ibs}\,a_{ms}
+  \;-\;\mathcal{M}_{\mathrm{BC}}(1-z_{ib})
+  \qquad\forall i\in I,\;b\in B_i,
 \end{equation}
-giving
-\begin{equation}
-\mathrm{BC}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
-  \beta_{ibs}\,u_{ibmts}\in\{0,1,2,3\},
-\end{equation}
-again linear through $u$. Penalty: $\mathrm{KPI}_{1.4}=\sum_i \mathrm{BC}_i$.
+with $\mathrm{BC}_i\in\{0,1,2,3\}$ at the chosen camp. Penalty:
+$\mathrm{KPI}_{1.4}=\sum_i \mathrm{BC}_i$.
 
 \subsection{KPI 2.4 -- Altitude Disruption Index}
 The penalty $f(\Delta e)=\max(0,\Delta e-500)/1000$ depends only on the
-\emph{constant} elevations of $b$ and $s$, so precompute
+\emph{constant} elevations of $b$ and $s$, so precompute the venue
+constant $A_{ibs}=f(|\mathrm{elev}(s)-\mathrm{elev}(b)|)$ (the
+$\max(0,\cdot)$ is resolved offline). It collapses onto $a_{ms}$ and pins
+via \eqref{eq:vind}:
 \begin{equation}
-A_{ibs}=f\!\bigl(|\mathrm{elev}(s)-\mathrm{elev}(b)|\bigr),
+\mathrm{ALT}_i \;\ge\; \sum_{m\in M_i}\sum_{s\in S}A_{ibs}\,a_{ms}
+  \;-\;\mathcal{M}_{\mathrm{ALT}}(1-z_{ib})
+  \qquad\forall i\in I,\;b\in B_i.
 \end{equation}
-and set
-\begin{equation}
-\mathrm{ALT}_i=\sum_{b\in B_i}\sum_{m\in M_i}\sum_{t\in T}\sum_{s\in S}
-  A_{ibs}\,u_{ibmts}.
-\end{equation}
-The $\max(0,\cdot)$ inside $f$ is resolved offline (it is a function of
-constants), so no in-model $\max$ linearization is needed. Penalty
-(minimax form): introduce $\mathrm{ALT}^{\max}\ge \mathrm{ALT}_i\ \forall
-i$, penalise $\mathrm{ALT}^{\max}$.
+Penalty (minimax form): introduce $\mathrm{ALT}^{\max}\ge \mathrm{ALT}_i\
+\forall i$, penalise $\mathrm{ALT}^{\max}$.
 
 % =================================================================
 \section{Base-Camp-Free Soft KPIs}
@@ -617,9 +657,10 @@ divisor). The leader solves:
 & \text{H1--H8 (hard feasibility),}\notag\\
 & \text{\eqref{eq:selone}--\eqref{eq:condopt}, \eqref{eq:exclusive} (lower-level best response),}
   \notag\\
-& \text{\eqref{eq:mccormick} (product linearization) and all KPI
-  epigraph / indicator constraints above,}\notag\\
-& x,y,z,u,\delta,o,w,\pi\in\{0,1\},\quad \text{epigraph vars}\ \ge 0.
+& \text{\eqref{eq:cstar-ind}, \eqref{eq:vind} (chosen-camp indicator
+  constraints) and all KPI epigraph constraints above,}\notag\\
+& x,y,z,\delta,o,w,\pi\in\{0,1\},\quad
+  a_{ms},\,C_i^\star,\,\text{epigraph vars}\ \ge 0.
 \notag
 \end{align}
 Maximised KPIs (5.1, 5.2) enter with a negative sign. The weights
@@ -645,8 +686,11 @@ US entry restr.\ (1.7) & ban $=$ hard exclusion; bond $=$ friction &
   fix $z_{ib}=0$ for $F^{\mathrm{ban}}$ on US camps; constant penalty
   $\pi^{\mathrm{bond}}$ added to $C_{ib}$ for $F^{\mathrm{bond}}$ (stays
   linear) \\
-$C_i^\star$, 1.3, 1.4, 2.4 & binary product $z_{ib}x_{mts}$ &
-  McCormick \eqref{eq:mccormick}; exact at binary endpoints \\
+$C_i^\star$, 1.3, 1.4, 2.4 & ``value at chosen camp'' ($z\!\cdot\!a$
+  coupling) &
+  slot index projected out via $a_{ms}$ \eqref{eq:ams}; big-$M$ indicator
+  constraints \eqref{eq:cstar-ind}, \eqref{eq:vind} keyed on $z_{ib}$ ---
+  no product variables \\
 1.2 & range $\max-\min$; CV ratio &
   epigraph vars for $\max,\min$; \emph{range} used in place of CV \\
 1.3 / 2.4 & mod-24, piecewise $\phi$, $\max(0,\cdot)$ in $f$ &

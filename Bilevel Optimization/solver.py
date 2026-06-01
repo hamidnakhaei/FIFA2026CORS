@@ -17,7 +17,7 @@ from output_handler import OutputHandler, export_solution_excel
 
 
 class FIFA2026Solver:
-    """Main solver orchestrator for the bilevel FIFA 2026 optimization."""
+    """Main solver for the bilevel FIFA 2026 optimization."""
     
     def __init__(self, data_dir=DATA_DIR):
         """Initialize the solver."""
@@ -25,6 +25,7 @@ class FIFA2026Solver:
         self.data_loader = None
         self.parameters = None
         self.model = None
+        self.model_builder = None  # Store builder for variable access
         self.solution = None
         self.start_time = None
         self.end_time = None
@@ -62,13 +63,14 @@ class FIFA2026Solver:
         if self.data_loader is None or self.parameters is None:
             raise RuntimeError("Data and parameters must be built first")
         
-        self.model = build_model(self.data_loader, self.parameters)
+        # build_model now returns (model, builder)
+        self.model, self.model_builder = build_model(self.data_loader, self.parameters)
         
         # Write LP file for inspection (optional)
-        print("\nModel statistics:")
-        print(f"  Variables: {self.model.NumVars}")
-        print(f"  Constraints: {self.model.NumConstrs}")
-        print(f"  Nonzeros: {self.model.NumNZs}")
+        # print("\nModel statistics:")
+        # print(f"  Variables: {self.model.NumVars}")
+        # print(f"  Constraints: {self.model.NumConstrs}")
+        # print(f"  Nonzeros: {self.model.NumNZs}")
         
         return self
     
@@ -136,28 +138,33 @@ class FIFA2026Solver:
             return None
         
         solution = {
-            'schedule': {},
-            'base_camps': {},
+            'schedule': {},  # Format: {(match_id, slot_idx, venue_id): 1, ...}
+            'base_camps': {},  # Format: {team_id: camp_id, ...}
             'objective': self.model.ObjVal,
             'status': self.model.status,
-            'solver_time': (self.end_time - self.start_time).total_seconds() if self.end_time else None
+            'solver_time': (self.end_time - self.start_time).total_seconds() if self.end_time else None,
+            'slot_map': self.model_builder.slot_map if self.model_builder else {}  # For translating slot_idx to (date, hour)
         }
         
-        # Extract schedule (x variables)
+        if self.model_builder is None:
+            print("⚠ Model builder not available; skipping solution extraction")
+            return None
+        
+        # Extract schedule (x variables) using correct slot_idx structure
         print("\nExtracting schedule...")
         schedule_count = 0
-        for match_id, hours_dict in getattr(self.model, 'x', {}).items():
-            for hour, venues_dict in hours_dict.items():
-                for venue_id, var in venues_dict.items():
+        for match_id, slot_dict in self.model_builder.x.items():
+            for slot_idx, venue_dict in slot_dict.items():
+                for venue_id, var in venue_dict.items():
                     if var.X > 0.5:  # Binary variable, so > 0.5 means 1
-                        solution['schedule'][(match_id, hour, venue_id)] = 1
+                        solution['schedule'][(match_id, slot_idx, venue_id)] = 1
                         schedule_count += 1
         print(f"  Extracted {schedule_count} scheduled matches")
         
         # Extract base camps (z variables)
         print("Extracting base camp selections...")
         camp_count = 0
-        for team_id, camps_dict in getattr(self.model, 'z', {}).items():
+        for team_id, camps_dict in self.model_builder.z.items():
             for camp_id, var in camps_dict.items():
                 if var.X > 0.5:  # Binary variable
                     solution['base_camps'][team_id] = camp_id

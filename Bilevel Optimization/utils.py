@@ -5,7 +5,7 @@ Utility functions for FIFA 2026 Bilevel Optimization
 import math
 import numpy as np
 from datetime import datetime, timedelta
-from config import JET_LAG_PENALTY_TIMES, JET_LAG_PENALTY_VALUES, ALTITUDE_THRESHOLD, ALTITUDE_PENALTY_SCALE
+from config import JET_LAG_PENALTY_TIMES, JET_LAG_PENALTY_VALUES
 
 
 def great_circle_distance(lat1, lon1, lat2, lon2):
@@ -101,25 +101,6 @@ def jet_lag_penalty(perceived_hour):
     
     # If hour >= last time (should be 24), wrap to first penalty
     return JET_LAG_PENALTY_VALUES[0]
-
-
-def altitude_disruption(venue_elev, camp_elev):
-    """
-    Calculate altitude disruption penalty.
-    
-    Args:
-        venue_elev: Elevation at venue (meters)
-        camp_elev: Elevation at base camp (meters)
-    
-    Returns:
-        Altitude disruption penalty
-    """
-    elev_diff = abs(venue_elev - camp_elev)
-    
-    if elev_diff <= ALTITUDE_THRESHOLD:
-        return 0
-    else:
-        return (elev_diff - ALTITUDE_THRESHOLD) / ALTITUDE_PENALTY_SCALE
 
 
 def parse_time(time_str):

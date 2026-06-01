@@ -69,12 +69,20 @@ class OutputHandler:
         # Example: Extract scheduled matches from solution if available
         if 'schedule' in solution and solution['schedule']:
             # Process schedule changes here
-            # schedule format: {(match_id, hour, venue_id): 1, ...}
-            for (match_id, hour, venue_id), assigned in solution['schedule'].items():
+            # schedule format: {(match_id, slot_idx, venue_id): 1, ...}
+            slot_map = solution.get('slot_map', {})
+            for (match_id, slot_idx, venue_id), assigned in solution['schedule'].items():
                 if assigned == 1:
-                    # Find the row and update venue (for demo)
+                    # Find the row and update venue
                     mask = schedule_df['match_id'] == match_id
                     schedule_df.loc[mask, 'venue_id'] = venue_id
+                    
+                    # Update date and kickoff time if slot_map is available
+                    if slot_idx in slot_map:
+                        date, hour = slot_map[slot_idx]
+                        # Format date if needed
+                        schedule_df.loc[mask, 'date'] = pd.Timestamp(date)
+                        schedule_df.loc[mask, 'kickoff_local'] = f"{hour:02d}:00"
         
         # Ensure correct data types
         schedule_df = schedule_df[[
