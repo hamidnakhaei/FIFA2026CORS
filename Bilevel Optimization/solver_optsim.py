@@ -377,14 +377,22 @@ class OptSimSolver:
         print(f"Teams assigned camps: {len(self.solution['camp_assignment'])}")
         print("="*70 + "\n")
     
-    def save_solution(self, filename):
-        """Save solution to file."""
+    def save_solution(self, output_dir="output"):
+        """
+        Save solution to Excel files.
+        
+        Args:
+            output_dir: Directory to save xlsx files
+        """
         if self.solution is None:
             print("No solution to save")
             return
         
-        # Implementation would save schedule and camps to Excel/JSON
-        print(f"Solution saved to {filename}")
+        # Export to Excel using OutputHandler
+        handler = OutputHandler(self.data_loader)
+        schedule_file, camps_file, metadata_file = handler.export_solution(self.solution, output_dir)
+        
+        return schedule_file, camps_file, metadata_file
     
     def run_full_pipeline(self, time_limit=3600, max_iterations=10, mip_gap=0.01):
         """
@@ -424,8 +432,8 @@ def run_optimization_sim(time_limit=3600, max_iterations=10, verbose=True):
         Solution dictionary
     
     Output Files:
-        - optimized_schedule_optsim.xlsx
-        - base_camp_assignments_optsim.xlsx
+        - output/optimized_schedule.xlsx
+        - output/base_camp_assignments.xlsx
     """
     solver = OptSimSolver(data_dir=DATA_DIR)
     solution = solver.run_full_pipeline(
@@ -435,7 +443,7 @@ def run_optimization_sim(time_limit=3600, max_iterations=10, verbose=True):
     
     if solution:
         solver.print_solution_summary()
-        solver.save_solution("solution_optsim.txt")
+        solver.save_solution()  # Exports to output/ directory
     
     return solution
 

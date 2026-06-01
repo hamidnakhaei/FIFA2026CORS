@@ -28,7 +28,7 @@ class OutputHandler:
             output_dir: Directory to save Excel files (will be created)
         
         Returns:
-            Tuple of (schedule_file, base_camps_file) paths
+            Tuple of (schedule_file, base_camps_file, metadata_file) paths
         """
         import os
         
@@ -38,15 +38,17 @@ class OutputHandler:
         # Generate Excel files
         schedule_file = self._export_optimized_schedule(solution, output_dir)
         camps_file = self._export_base_camp_assignments(solution, output_dir)
+        metadata_file = self._export_solution_metadata(solution, output_dir)
         
         print(f"\n" + "="*70)
         print("SOLUTION EXPORTED")
         print("="*70)
         print(f"Schedule: {schedule_file}")
         print(f"Base Camps: {camps_file}")
+        print(f"Metadata: {metadata_file}")
         print("="*70 + "\n")
         
-        return schedule_file, camps_file
+        return schedule_file, camps_file, metadata_file
     
     def _export_optimized_schedule(self, solution, output_dir):
         """
@@ -62,33 +64,28 @@ class OutputHandler:
         # Start with original matches data
         schedule_df = self.data.matches.copy()
         
-        # For now, this is a placeholder that preserves original dates/times
-        # In a full implementation, you would update date/venue/kickoff_local
-        # based on the x variables in the solution
-        
-        # Example: Extract scheduled matches from solution if available
+        # Extract scheduled matches from solution
         if 'schedule' in solution and solution['schedule']:
-            # Process schedule changes here
-            # schedule format: {(match_id, slot_idx, venue_id): 1, ...}
-            slot_map = solution.get('slot_map', {})
-            for (match_id, slot_idx, venue_id), assigned in solution['schedule'].items():
-                if assigned == 1:
-                    # Find the row and update venue
-                    mask = schedule_df['match_id'] == match_id
-                    schedule_df.loc[mask, 'venue_id'] = venue_id
+            # solution['schedule'] format: {match_id: {'slot_idx': idx, 'venue_id': vid, 'slot': (date, hour)}}
+            for match_id, schedule_info in solution['schedule'].items():
+                mask = schedule_df['match_id'] == match_id
+                if mask.any():
+                    # Update venue
+                    schedule_df.loc[mask, 'venue_id'] = schedule_info.get('venue_id')
                     
-                    # Update date and kickoff time if slot_map is available
-                    if slot_idx in slot_map:
-                        date, hour = slot_map[slot_idx]
-                        # Format date if needed
+                    # Update date and time from slot
+                    if 'slot' in schedule_info:
+                        date, hour = schedule_info['slot']
                         schedule_df.loc[mask, 'date'] = pd.Timestamp(date)
-                        schedule_df.loc[mask, 'kickoff_local'] = f"{hour:02d}:00"
+                        schedule_df.loc[mask, 'kickoff_local'] = f"{int(hour):02d}:00"
         
-        # Ensure correct data types
-        schedule_df = schedule_df[[
+        # Ensure correct data types and format
+        output_cols = [
             'match_id', 'group', 'round', 'team_a_id', 'team_b_id', 
             'venue_id', 'date', 'kickoff_local'
-        ]]
+        ]
+        schedule_df = schedule_df[output_cols].copy()
+        schedule_df['date'] = pd.to_datetime(schedule_df['date']).dt.strftime('%Y-%m-%d')
         
         # Save to Excel
         filename = f"{output_dir}/optimized_schedule.xlsx"
@@ -112,23 +109,29 @@ class OutputHandler:
         # Create base camps assignment data
         assignments = []
         
-        if 'base_camps' in solution:
-            for team_id, camp_id in solution['base_camps'].items():
-                # Get camp information
-                camp_info = self.data.get_camp_info(camp_id)
-                team_info = self.data.get_team_info(team_id)
+        # Handle both 'base_camps' and 'camp_assignment' keys
+        camps_dict = solution.get('camp_assignment', solution.get('base_camps', {}))
+        
+        if camps_dict:
+            for team_id, camp_id in camps_dict.items():
+                # Get team name from teams data
+                team_row = self.data.teams[self.data.teams['team_id'] == team_id]
+                team_name = team_row['team_name'].values[0] if len(team_row) > 0 else f"Team {team_id}"
                 
-                if camp_info and team_info:
+                # Get camp info from base_camps data (using base_camp_id not camp_id)
+                camp_row = self.data.base_camps[self.data.base_camps['base_camp_id'] == camp_id]
+                
+                if len(camp_row) > 0:
                     assignment = {
                         'team_id': team_id,
-                        'team_name': team_info.get('team_name', ''),
+                        'team_name': team_name,
                         'base_camp_id': camp_id,
-                        'training_site': camp_info.get('training_site', ''),
-                        'city': camp_info.get('city', ''),
-                        'country': camp_info.get('country', ''),
-                        'lat': camp_info.get('lat', ''),
-                        'lon': camp_info.get('lon', ''),
-                        'utc_offset_june': camp_info.get('utc_offset_june', '')
+                        'training_site': camp_row['training_site'].values[0],
+                        'city': camp_row['city'].values[0],
+                        'country': camp_row['country'].values[0],
+                        'lat': camp_row['lat'].values[0],
+                        'lon': camp_row['lon'].values[0],
+                        'utc_offset_june': camp_row['utc_offset_june'].values[0]
                     }
                     assignments.append(assignment)
         
@@ -147,6 +150,61 @@ class OutputHandler:
         assignments_df.to_excel(filename, index=False, sheet_name='Assignments')
         
         print(f"  Base Camp Assignments: {len(assignments_df)} teams exported")
+        
+        return filename
+    
+    def _export_solution_metadata(self, solution, output_dir):
+        """
+        Export solution metadata to Excel.
+        
+        Args:
+            solution: Solution dictionary
+            output_dir: Output directory
+        
+        Returns:
+            Path to Excel file
+        """
+        # Create metadata DataFrame
+        metadata = {
+            'Metric': [
+                'KPI Penalty',
+                'Iterations',
+                'Solve Time (seconds)',
+                'Teams Assigned',
+                'Matches Scheduled'
+            ],
+            'Value': [
+                f"{solution.get('kpi_penalty', 0):.4f}",
+                solution.get('iterations', 0),
+                f"{solution.get('solve_time', 0):.2f}",
+                len(solution.get('camp_assignment', {})),
+                len(solution.get('schedule', {}))
+            ]
+        }
+        metadata_df = pd.DataFrame(metadata)
+        
+        # Add KPI history if available
+        if 'kpi_history' in solution and solution['kpi_history']:
+            history_data = []
+            for entry in solution['kpi_history']:
+                history_data.append({
+                    'Iteration': entry.get('iteration', ''),
+                    'Penalty': f"{entry.get('penalty', 0):.4f}",
+                    'Accepted': 'Yes' if entry.get('accepted', False) else 'No',
+                    'Note': entry.get('note', '')
+                })
+            history_df = pd.DataFrame(history_data)
+        else:
+            history_df = pd.DataFrame()
+        
+        # Save to Excel with multiple sheets
+        filename = f"{output_dir}/solution_metadata.xlsx"
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            metadata_df.to_excel(writer, sheet_name='Summary', index=False)
+            if not history_df.empty:
+                history_df.to_excel(writer, sheet_name='KPI History', index=False)
+        
+        print(f"  Solution Metadata: Summary + History exported")
         
         return filename
 

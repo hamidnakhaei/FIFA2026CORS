@@ -53,7 +53,7 @@ def run_optimization_optsim(time_limit=3600, max_iterations=10, verbose=True):
     
     if solution:
         solver.print_solution_summary()
-        solver.save_solution("solution_optsim.txt")
+        solver.save_solution()  # Exports to output/ directory
     
     return solution
 
