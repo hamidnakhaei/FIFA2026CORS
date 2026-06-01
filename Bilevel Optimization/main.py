@@ -18,6 +18,10 @@ def run_optimization(time_limit=3600, mip_gap=0.01, verbose=True):
     
     Returns:
         Solution dictionary
+    
+    Output Files (in 'output/' directory):
+        - optimized_schedule.xlsx: New schedule with optimized times/venues
+        - base_camp_assignments.xlsx: Base camp assignments for each team
     """
     solver = FIFA2026Solver(data_dir=DATA_DIR)
     solution = solver.run_full_pipeline(time_limit=time_limit, mip_gap=mip_gap)

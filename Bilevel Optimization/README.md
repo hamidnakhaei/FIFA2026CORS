@@ -26,8 +26,12 @@ This directory contains a modular implementation of the bilevel optimization fra
 ├── model_builder.py             # Basic Gurobi model construction
 ├── model_builder_advanced.py    # Advanced model with full KPI support
 ├── solver.py                    # Main orchestrator (load → build → solve → extract)
+├── output_handler.py            # Export solution to Excel files
 ├── requirements.txt             # Python dependencies (gurobipy, pandas, numpy)
 ├── README.md                    # This file
+├── output/                      # Output directory (created on first run)
+│   ├── optimized_schedule.xlsx  # Optimized schedule
+│   └── base_camp_assignments.xlsx # Team base camp choices
 └── data/                        # Data files
     ├── matches.csv
     ├── venues.csv
@@ -69,3 +73,20 @@ solver.save_solution("results.txt")
 - **model_builder.py**: Core Gurobi model with hard constraints and lower-level logic
 - **model_builder_advanced.py**: Extended model with full KPI implementation
 - **solver.py**: Pipeline orchestrator (load → build → solve → extract)
+- **output_handler.py**: Export solution to Excel files
+
+## Output Files
+
+After solving, the following Excel files are automatically generated in the `output/` directory:
+
+### 1. `optimized_schedule.xlsx`
+Optimized match schedule matching the structure of input `matches.csv`:
+- **Columns**: match_id, group, round, team_a_id, team_b_id, venue_id, date, kickoff_local
+- **Contents**: 72 matches with optimized venue assignments and times
+- **Structure**: Same as input for easy comparison
+
+### 2. `base_camp_assignments.xlsx`
+Team base camp assignments from the solution:
+- **Columns**: team_id, team_name, base_camp_id, training_site, city, country, lat, lon, utc_offset_june
+- **Contents**: 48 teams with their chosen base camp facility
+- **Structure**: Enriched version combining team and camp information

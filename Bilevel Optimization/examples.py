@@ -14,9 +14,9 @@ from config import DATA_DIR
 # EXAMPLE 1: Simplest usage - run full pipeline
 # ============================================================================
 def example_1_basic_optimization():
-    """Most basic usage: load, build, solve, extract."""
+    """Most basic usage: load, build, solve, extract (and export Excel files)."""
     print("\n" + "="*70)
-    print("EXAMPLE 1: Basic Full Pipeline")
+    print("EXAMPLE 1: Basic Full Pipeline with Excel Export")
     print("="*70)
     
     solver = FIFA2026Solver()
@@ -25,6 +25,9 @@ def example_1_basic_optimization():
     if solution:
         print(f"\nObjective value: {solution['objective']:.2f}")
         print(f"Teams assigned: {solution['kpis']['num_teams_assigned']}")
+        print(f"\n✓ Excel files created in 'output/' directory:")
+        print(f"  - optimized_schedule.xlsx")
+        print(f"  - base_camp_assignments.xlsx")
 
 
 # ============================================================================

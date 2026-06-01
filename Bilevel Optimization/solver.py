@@ -13,6 +13,7 @@ from config import DATA_DIR
 from data_loader import DataLoader, load_data
 from parameter_builder import ParameterBuilder, build_parameters
 from model_builder import ModelBuilder, build_model
+from output_handler import OutputHandler, export_solution_excel
 
 
 class FIFA2026Solver:
@@ -235,12 +236,29 @@ class FIFA2026Solver:
             self.solve(time_limit=time_limit, mip_gap=mip_gap)
             self.extract_solution()
             self.print_solution_summary()
+            self.export_to_excel()  # Export results to Excel files
             return self.solution
         except Exception as e:
             print(f"\n✗ Error in pipeline: {e}")
             import traceback
             traceback.print_exc()
             return None
+    
+    def export_to_excel(self, output_dir="output"):
+        """
+        Export solution to Excel files.
+        
+        Args:
+            output_dir: Directory for output files
+        
+        Returns:
+            Tuple of (schedule_file, camps_file) paths
+        """
+        if self.solution is None or self.data_loader is None:
+            print("⚠ No solution to export")
+            return None
+        
+        return export_solution_excel(self.data_loader, self.solution, output_dir)
 
 
 def main():
@@ -253,7 +271,7 @@ def main():
     # Create solver
     solver = FIFA2026Solver(data_dir=DATA_DIR)
     
-    # Run full pipeline
+    # Run full pipeline (includes Excel export)
     solution = solver.run_full_pipeline(
         time_limit=3600,  # 1 hour
         mip_gap=0.01      # 1% optimality gap
@@ -262,6 +280,9 @@ def main():
     # Save solution
     if solution is not None:
         solver.save_solution("solution.txt")
+        print("\n✓ Excel files generated in 'output/' directory:")
+        print("  - optimized_schedule.xlsx")
+        print("  - base_camp_assignments.xlsx")
     
     return solver
 
