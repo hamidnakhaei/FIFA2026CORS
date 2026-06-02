@@ -46,11 +46,9 @@ class KPICalculator:
             "kpi_1_6": self._kpi_1_6_rest_asymmetry(schedule),
             "kpi_1_7": self._kpi_1_7_entry_visa_restriction(schedule, base_camp_assignment),
             "kpi_2_2": self._kpi_2_2_per_team_heat_load(schedule),
-            "kpi_2_4": self._kpi_2_4_altitude_disruption(schedule, base_camp_assignment),
             "kpi_3_3": self._kpi_3_3_first_mover_balance(schedule),
             "kpi_4_1": self._kpi_4_1_venue_load_balance(schedule),
             "kpi_4_2": self._kpi_4_2_fan_accessibility(schedule),
-            "kpi_5_1": self._kpi_5_1_prime_time_alignment(schedule),
             "kpi_5_2": self._kpi_5_2_marquee_match_quality(schedule),
             "kpi_5_3": self._kpi_5_3_host_city_economic_equity(schedule),
         }
@@ -81,10 +79,9 @@ class KPICalculator:
         total_dispersion = 0.0
         for group in self.teams["group"].unique():
             group_teams = self.teams[self.teams["group"] == group]["team_id"].tolist()
-            group_distances = [TD.get(t, 0) for t in group_teams]
-            if group_distances:
-                delta_g = max(group_distances) - min(group_distances)
-                total_dispersion += delta_g
+            group_distances = [TD[id] for id in group_teams]
+            delta_g = max(group_distances) - min(group_distances)
+            total_dispersion += delta_g
 
         return total_dispersion
 
@@ -157,22 +154,30 @@ class KPICalculator:
         KPI 1.4: Match-Venue Geographic Dispersion.
         Formula: CC_i = |{cluster(v_i,1), cluster(v_i,2), cluster(v_i,3)}|
         Minimize total cluster count across all teams.
+        or 
+        BC_i = Σ_k 𝟙[country(b_i) ≠ country(v_i,k)]
+        Minimize total border crossing across all teams.
         """
         total_cc = 0.0
+        total_bc = 0.0
 
         for team_id in self.teams["team_id"].unique():
             clusters = set()
+            base_camp_id = base_camp_assignment[team_id]
+            base_camp_country = self.base_camps[base_camp_id]["country"].values[0]
             for match_id, (slot, stadium_id) in schedule.items():
                 match = self.matches[self.matches["match_id"] == match_id].iloc[0]
                 if team_id in [match["team_a_id"], match["team_b_id"]]:
-                    cluster = self.params["cluster"].get(stadium_id, "Unknown")
+                    cluster = self.params["cluster"][stadium_id]
                     clusters.add(cluster)
+                    if base_camp_country != self.venues[self.venues["venue_id"] == stadium_id]["country"].values[0]:
+                        total_bc += 1  # Count base camp cluster mismatch
 
             # Penalty for concentration: fewer clusters = higher penalty
             cc_i = len(clusters)
-            total_cc += (3 - cc_i)  # Penalize less diversity (3 clusters ideal)
+            total_cc += cc_i  # Penalize high diversity 
 
-        return total_cc
+        return total_bc
 
     def _kpi_1_6_rest_asymmetry(self, schedule: Dict) -> float:
         """
@@ -193,7 +198,7 @@ class KPICalculator:
             rest_b = self._compute_rest_days(team_b, match_id, schedule)
 
             asymmetry = abs(rest_a - rest_b)
-            rest_penalty += asymmetry
+            rest_penalty += int(asymmetry>0)
 
         return rest_penalty
 
@@ -449,29 +454,33 @@ class KPICalculator:
         msq = 0.0
 
         for match_id, (slot, stadium_id) in schedule.items():
-            match = self.matches[self.matches["match_id"] == match_id].iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
-
-            # Get Elo ratings (lower = stronger)
-            elo_a = self.params["team_rating"].get(team_a, 50)
-            elo_b = self.params["team_rating"].get(team_b, 50)
-
             # Compute match strength score (inverse Elo: lower Elo = higher score)
-            mu_ij = (1.0 / elo_a + 1.0 / elo_b) / 2 if elo_a > 0 and elo_b > 0 else 0.5
+            mu_ij = self.params["match_value"].get(match_id, 0.5)
 
             # Slot quality (primetime bonus)
-            q_s = 0.5
+            q_s = 0
             if isinstance(slot, tuple):
                 _, kickoff_time = slot
                 try:
                     kickoff_hour = float(kickoff_time.split(":")[0])
                     if primetime_window[0] <= kickoff_hour <= primetime_window[1]:
-                        q_s = 1.0
+                        q_s = 1.0*self.params["popularity"].get(match_id, 1.0)  # Primetime bonus scaled by match popularity
                 except:
                     pass
 
             msq += mu_ij * q_s
+
+        # penalty for simultaneous popular matches (if two matches have high popularity in the same slot, we reduce the score)
+        # get top 20 percent of matches by popularity
+        popularity_threshold = np.percentile(list(self.params["popularity"].values()), 80)
+        # for mathces with popularity above threshold, check if they are in the same slot and reduce score if so
+        for match_id, (slot, stadium_id) in schedule.items():
+            if self.params["popularity"].get(match_id, 0) >= popularity_threshold:
+                for other_match_id, (other_slot, other_stadium_id) in schedule.items():
+                    if match_id != other_match_id and self.params["popularity"].get(other_match_id, 0) >= popularity_threshold:
+                        if slot == other_slot:  # Simultaneous matches
+                            msq -= np.average([self.params["popularity"].get(match_id, 0), self.params["popularity"].get(other_match_id, 0)])
+        
 
         return -msq  # Negative for minimization objective
 

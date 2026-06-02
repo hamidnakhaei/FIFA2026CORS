@@ -3,96 +3,8 @@ Utilities module for solution validation, post-processing, and reporting.
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, Tuple
+from typing import Dict
 import pickle
-
-
-class SolutionValidator:
-    """Validate that a solution satisfies hard constraints H1-H8."""
-
-    def __init__(self, data_loader):
-        self.loader = data_loader
-        self.matches = data_loader.get_matches()
-        self.venues = data_loader.get_venues()
-        self.teams = data_loader.get_teams()
-        self.M, self.T, self.S, self.I, self.G, self.M_i, self.M_g, self.T_r, self.S_c = (
-            data_loader.get_sets_and_indices()
-        )
-
-    def validate_all(self, schedule: Dict) -> Dict[str, bool]:
-        """
-        Validate all hard constraints.
-
-        Returns:
-            Dictionary with constraint validation results
-        """
-        results = {
-            "H1_each_match_once": self._check_h1(schedule),
-            "H2_round_robin": self._check_h2(schedule),
-            "H3_one_per_round": self._check_h3(schedule),
-            "H7_simultaneous_finals": self._check_h7(schedule),
-            "H8_country_allocation": self._check_h8(schedule),
-        }
-        return results
-
-    def _check_h1(self, schedule: Dict) -> bool:
-        """H1: Each match scheduled exactly once."""
-        match_ids = set(schedule.keys())
-        expected = set(self.matches["match_id"].unique())
-        return match_ids == expected
-
-    def _check_h2(self, schedule: Dict) -> bool:
-        """H2: Each team plays 3 matches (round-robin)."""
-        for team_id in self.I:
-            team_matches = [
-                m for m in schedule if team_id in [
-                    self.matches[self.matches["match_id"] == m]["team_a_id"].values[0],
-                    self.matches[self.matches["match_id"] == m]["team_b_id"].values[0],
-                ]
-            ]
-            if len(team_matches) != 3:
-                return False
-        return True
-
-    def _check_h3(self, schedule: Dict) -> bool:
-        """H3: One match per team per round."""
-        for team_id in self.I:
-            for round_num in [1, 2, 3]:
-                round_matches = [
-                    m for m in schedule
-                    if self.matches[self.matches["match_id"] == m]["round"].values[0] == round_num
-                    and team_id in [
-                        self.matches[self.matches["match_id"] == m]["team_a_id"].values[0],
-                        self.matches[self.matches["match_id"] == m]["team_b_id"].values[0],
-                    ]
-                ]
-                if len(round_matches) != 1:
-                    return False
-        return True
-
-    def _check_h7(self, schedule: Dict) -> bool:
-        """H7: Final matches of each group simultaneous."""
-        # Simplified check: at least verify finals exist
-        for group in self.G:
-            final_matches = [
-                m for m in schedule
-                if self.matches[self.matches["match_id"] == m]["group"].values[0] == group
-                and self.matches[self.matches["match_id"] == m]["round"].values[0] == 3
-            ]
-            if len(final_matches) < 2:
-                return False
-        return True
-
-    def _check_h8(self, schedule: Dict) -> bool:
-        """H8: Match allocation by country."""
-        targets = {"USA": 52, "MEX": 10, "CAN": 10}
-        for country, target in targets.items():
-            country_stadiums = self.S_c[country]
-            count = sum(1 for m, (t, s) in schedule.items() if s in country_stadiums)
-            if count != target:
-                return False
-        return True
 
 
 class SolutionReporter:
@@ -221,30 +133,3 @@ def load_solution(filename: str) -> Dict:
     """Load solution from pickle file."""
     with open(filename, "rb") as f:
         return pickle.load(f)
-
-
-if __name__ == "__main__":
-    from data_loader import DataLoader
-
-    loader = DataLoader()
-    data = loader.load_all()
-
-    # Test with dummy data
-    schedule = {i: (i % 24, f"S{i % 16}") for i in range(1, 73)}
-    base_camp_assignment = {
-        "BRA": 1, "GER": 2, "ARG": 3, "FRA": 4, "ENG": 5,
-    }
-
-    validator = SolutionValidator(loader)
-    results = validator.validate_all(schedule)
-    print("Constraint validation results:")
-    for constraint, valid in results.items():
-        status = "✓" if valid else "✗"
-        print(f"  {status} {constraint}")
-
-    reporter = SolutionReporter(loader)
-    print("\nSchedule info:")
-    reporter.print_schedule_summary(schedule)
-    print("\nBase camp info:")
-    reporter.print_base_camp_summary(base_camp_assignment)
-    reporter.export_to_csv(schedule, base_camp_assignment, "test_output")

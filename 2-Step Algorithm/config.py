@@ -9,18 +9,17 @@ class config_params:
         # KPI Weights (from Algorithm.tex - 13 selected KPIs)
         self.KPI_WEIGHTS = {
             "kpi_1_2": 0.10,   # Travel distance
-            "kpi_1_3": 0.08,   # Travel frequency
-            "kpi_1_4": 0.08,   # Jet lag
-            "kpi_1_6": 0.05,   # Altitude shock
+            "kpi_1_3": 0.08,   # Jet lag
+            "kpi_1_4": 0.07,   # Geographic Dispersion
+            "kpi_1_6": 0.05,   # Rest Asymmetry 
             "kpi_1_7": 0.05,   # US entry/visa exposure
-            "kpi_2_2": 0.12,   # Rest violations
-            "kpi_2_4": 0.10,   # Weather (WBGT)
-            "kpi_3_3": 0.08,   # Geographic dispersion
-            "kpi_4_1": 0.10,   # Broadcast value
-            "kpi_4_2": 0.08,   # Equal broadcast distribution
-            "kpi_5_1": 0.05,   # Venue variety
-            "kpi_5_2": 0.06,   # Strong teams broadcast
-            "kpi_5_3": 0.04,   # Roofed stadiums
+            "kpi_2_2": 0.12,   # Heat Load
+            "kpi_3_3": 0.08,   # Round-Order Balance Index (First-Mover)
+            "kpi_4_1": 0.10,   # Venue-Load Balance
+            "kpi_4_2": 0.08,   # Fan Accessibility and Same-City Overlap
+            "kpi_5_1": 0.05,   # Prime-Time Alignment Score
+            "kpi_5_2": 0.06,   # Marquee-Match Slot Quality and Overlap Penalty
+            "kpi_5_3": 0.04,   # Host-City Economic Equity
         }
 
         # Hard constraints constants
@@ -46,9 +45,8 @@ class config_params:
 
         # Optimization parameters
         self.DEFAULT_STEP_A_TIME_LIMIT = 300  # seconds
-        self.DEFAULT_STEP_B_MAX_ITERATIONS = 50
+        self.DEFAULT_STEP_B_TIME_LIMIT = 300  # seconds
         self.DEFAULT_MAX_OUTER_ITERATIONS = 5
-        self.DEFAULT_CONVERGENCE_TOL = 0.01
 
         # Solver settings
         self.DEFAULT_SOLVER = "glpk"  # Options: glpk, gurobi, cbc
@@ -57,10 +55,6 @@ class config_params:
             "gurobi": {"TimeLimit": 300, "Threads": 4},
             "cbc": {"sec": 300},
         }
-
-        # Temperature schedule for simulated annealing
-        self.TEMPERATURE_SCHEDULES = ["exponential", "linear", "constant"]
-        self.DEFAULT_TEMPERATURE_SCHEDULE = "exponential"
 
         # Data paths
         self.DATA_DIR = "data"

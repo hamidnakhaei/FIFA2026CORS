@@ -25,6 +25,7 @@ class ScheduleOptimizer:
         self.loader = data_loader
         self.kpi_calc = kpi_calculator
         self.base_camp_assignment = base_camp_assignment
+        self.config_params = data_loader.config_params
 
         self.matches = data_loader.get_matches()
         self.venues = data_loader.get_venues()
@@ -57,10 +58,16 @@ class ScheduleOptimizer:
         Returns sorted list of tuples: [(date_str, time_str), ...]
         """
         slots = set()
+        dates = set()
+        times = set()
         for _, match in self.matches.iterrows():
             date = match["date"]
             time = match["kickoff_local"]
-            slots.add((str(date), str(time)))
+            dates.add(str(date))
+            times.add(str(time))
+        for date in sorted(dates):
+            for time in sorted(times):
+                slots.add((date, time))
         return sorted(list(slots))
 
     def _compute_kpi_coefficients(self) -> Dict:
@@ -86,7 +93,7 @@ class ScheduleOptimizer:
                         if team_id in self.base_camp_assignment:
                             base_camp_id = self.base_camp_assignment[team_id]
                             dist = self.params["dist"].get((base_camp_id, s), 0)
-                            cost += 0.10 * dist / 100  # Normalize distance
+                            cost += self.config_params.KPI_WEIGHTS["kpi_1_2"] * dist / 100  # Normalize distance
                     
                     # KPI 1.4: Jet lag - time zone difference (weight 0.08)
                     for team_id in [match["team_a_id"], match["team_b_id"]]:
@@ -95,7 +102,7 @@ class ScheduleOptimizer:
                             stadium_tz = self.params["tzone_stadium"].get(s, 0)
                             camp_tz = self.params["tzone_basecamp"].get(base_camp_id, 0)
                             tz_diff = abs(stadium_tz - camp_tz)
-                            cost += 0.08 * tz_diff
+                            cost += self.config_params.KPI_WEIGHTS["kpi_1_4"] * tz_diff
                     
                     # KPI 2.4: Weather WBGT penalty (weight 0.10)
                     venue_weather = self.params["weather"][
@@ -104,12 +111,12 @@ class ScheduleOptimizer:
                     if len(venue_weather) > 0:
                         avg_temp = venue_weather["temperature_c"].mean()
                         weather_penalty = max(0, avg_temp - 20)
-                        cost += 0.10 * weather_penalty / 10  # Normalize
+                        cost += self.config_params.KPI_WEIGHTS["kpi_2_4"] * weather_penalty / 10  # Normalize
                     
                     # KPI 4.1: Broadcast value (weight 0.10) - prefer high match value in good slots
                     match_value = self.params["match_value"].get(m, 0.5)
                     broadcast_quality = self.params["broadcast_quality"].get(t_idx, 0.5)
-                    cost -= 0.10 * match_value * broadcast_quality  # Negative because we want to maximize
+                    cost -= self.config_params.KPI_WEIGHTS["kpi_4_1"] * match_value * broadcast_quality  # Negative because we want to maximize
                     
                     kpi_costs[(m, t_idx, s)] = cost
         

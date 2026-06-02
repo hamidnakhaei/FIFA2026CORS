@@ -88,7 +88,7 @@ class DataLoader:
     def get_sets_and_indices(
         self,
     ) -> Tuple[
-        Set[int], Set[int], Set[str], Set[str], Set[str], Dict, Dict, Dict, Dict
+        Set[int], Set[int], Set[str], Set[str], Set[str], Dict, Dict, Dict
     ]:
         """
         Extract sets and indices for the optimization model.
@@ -102,7 +102,6 @@ class DataLoader:
             - G: set of group IDs
             - M_i: dict mapping team_id to its 3 matches
             - M_g: dict mapping group to its 6 matches
-            - T_r: dict mapping round to time slots
             - S_c: dict mapping country to stadiums
         """
         matches = self.get_matches()
@@ -129,21 +128,13 @@ class DataLoader:
             group_matches = matches[matches["group"] == group]["match_id"].tolist()
             M_g[group] = set(group_matches)
 
-        # Map rounds to time slots (simplified: assume 3 rounds with 24 matches each)
-        matches_per_round = self.config_params.MATCH_COUNT // 3  # 72 / 3 = 24
-        T_r = {
-            1: set(range(0, matches_per_round)),
-            2: set(range(matches_per_round, 2 * matches_per_round)),
-            3: set(range(2 * matches_per_round, self.config_params.MATCH_COUNT))
-        }
-
         # Map countries to stadiums
         S_c = {}
         for country in ["USA", "MEX", "CAN"]:
             country_stadiums = venues[venues["country"] == country]["venue_id"].tolist()
             S_c[country] = set(country_stadiums)
 
-        return M, T, S, I, G, M_i, M_g, T_r, S_c
+        return M, T, S, I, G, M_i, M_g, S_c
 
     def get_parameters(self) -> Dict:
         """
@@ -176,12 +167,6 @@ class DataLoader:
             zip(base_camps["base_camp_id"], base_camps["utc_offset_june"])
         )
 
-        # Elevations
-        elev_stadium = dict(zip(venues["venue_id"], venues.get("elevation", [0] * len(venues))))
-        elev_basecamp = dict(
-            zip(base_camps["base_camp_id"], base_camps.get("elevation", [0] * len(base_camps)))
-        )
-
         # Stadium clusters
         cluster = dict(zip(venues["venue_id"], venues["zone"]))
 
@@ -196,21 +181,21 @@ class DataLoader:
             mu = (1 / team_a_rating + 1 / team_b_rating) / 2
             match_value[match["match_id"]] = mu
 
-        # Broadcast quality by time slot
-        broadcast_quality = {}
-        for i, _ in matches.iterrows():
-            broadcast_quality[i] = 0.5  # Simplified; would integrate prime-time scoring
+        # Audience popularity by match
+        pop = {}
+        for match_id in set(matches["match_id"].unique()):
+            team_a_id = matches[matches["match_id"] == match_id]["team_a_id"].values[0]
+            team_b_id = matches[matches["match_id"] == match_id]["team_b_id"].values[0]
+            pop[match_id] = broadcast[broadcast["team_id"] == team_a_id]["audience_weight"].values[0] + broadcast[broadcast["team_id"] == team_b_id]["audience_weight"].values[0]
 
         return {
             "dist": dist,
             "tzone_stadium": tzone_stadium,
             "tzone_basecamp": tzone_basecamp,
-            "elev_stadium": elev_stadium,
-            "elev_basecamp": elev_basecamp,
             "cluster": cluster,
             "team_rating": team_rating,
             "match_value": match_value,
-            "broadcast_quality": broadcast_quality,
+            "popularity": pop,
             "weather": weather,
             "broadcast_markets": broadcast,
             "N_c": self.config_params.COUNTRY_MATCH_ALLOCATION,
@@ -221,22 +206,3 @@ class DataLoader:
             "weights": self.config_params.KPI_WEIGHTS,
         }
 
-
-if __name__ == "__main__":
-    # Test data loading
-    loader = DataLoader()
-    data = loader.load_all()
-
-    print("✓ Matches loaded:", len(data["matches"]))
-    print("✓ Venues loaded:", len(data["venues"]))
-    print("✓ Teams loaded:", len(data["teams"]))
-    print("✓ Base camps loaded:", len(data["base_camps"]))
-    print("✓ Weather records loaded:", len(data["weather"]))
-    print("✓ Broadcast markets loaded:", len(data["broadcast_markets"]))
-
-    M, T, S, I, G, M_i, M_g, T_r, S_c = loader.get_sets_and_indices()
-    print(f"\nSets: |M|={len(M)}, |T|={len(T)}, |S|={len(S)}, |I|={len(I)}, |G|={len(G)}")
-    print(f"Countries: USA={len(S_c['USA'])}, MEX={len(S_c['MEX'])}, CAN={len(S_c['CAN'])}")
-
-    params = loader.get_parameters()
-    print(f"\n✓ Parameters computed: {len(params)} parameter sets")

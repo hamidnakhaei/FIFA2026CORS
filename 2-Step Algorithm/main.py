@@ -315,11 +315,11 @@ def main():
 
     # Run optimization
     result = optimizer.run(
-        max_iterations=3,
+        max_iterations=10,
         step_a_time_limit=60,  # 60s for testing; use 300+ for production
         step_b_iterations=50,
         step_b_num_changes=5,  # Change 5 base camps per iteration (default)
-        convergence_tol=0.01,
+        convergence_tol=10,
     )
 
     # Save results
