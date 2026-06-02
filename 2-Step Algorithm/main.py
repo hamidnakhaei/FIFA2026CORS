@@ -6,7 +6,6 @@ Implements the alternating minimization algorithm with stochastic exploration.
 import pandas as pd
 
 from typing import Dict, Tuple
-import pickle
 from datetime import datetime
 
 from data_loader import DataLoader
@@ -28,8 +27,7 @@ class TwoStepOptimizer:
     def __init__(
         self,
         data_dir: str = "data",
-        solver_name: str = "glpk"
-    ):
+        solver_name: str = "glpk"):
         self.data_dir = data_dir
         self.solver_name = solver_name
 
@@ -85,8 +83,7 @@ class TwoStepOptimizer:
 
     def run_step_b(
         self,
-        schedule: Dict
-    ) -> Dict:
+        schedule: Dict) -> Dict:
         """
         Step B: Optimize base camps while holding schedule fixed.
         Uses full KPI objective (all 13 KPIs) to evaluate base camp changes.
@@ -103,8 +100,7 @@ class TwoStepOptimizer:
         self,
         iteration_num: int,
         base_camp_assignment: Dict,
-        step_a_time_limit: int = 300
-    ) -> Tuple[Dict, Dict]:
+        step_a_time_limit: int = 300) -> Tuple[Dict, Dict]:
         """
         Run a single iteration of the two-step algorithm.
         Args:
@@ -144,8 +140,7 @@ class TwoStepOptimizer:
 
     def run(
         self,
-        max_iterations: int = 10
-    ) -> Dict:
+        max_iterations: int = 10) -> Dict:
         """
         Run the two-step optimization algorithm.
         Args:

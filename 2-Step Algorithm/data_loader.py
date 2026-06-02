@@ -86,10 +86,8 @@ class DataLoader:
         return broadcast
 
     def get_sets_and_indices(
-        self,
-    ) -> Tuple[
-        Set[int], Set[int], Set[str], Set[str], Set[str], Dict, Dict, Dict
-    ]:
+        self) -> Tuple[
+        Set[int], Set[int], Set[str], Set[str], Set[str], Dict, Dict, Dict]:
         """
         Extract sets and indices for the optimization model.
 
@@ -161,7 +159,8 @@ class DataLoader:
         venues = self.get_venues()
         base_camps = self.get_base_camps()
         teams = self.get_teams()
-        matches = self.get_matches()
+        self.matches = self.get_matches()
+        matches = self.matches
         weather = self.get_weather()
         broadcast = self.get_broadcast_markets()
 

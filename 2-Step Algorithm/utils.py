@@ -42,8 +42,7 @@ class SolutionReporter:
         return pd.DataFrame(rows).sort_values("match_id")
 
     def base_camp_assignment_to_dataframe(
-        self, base_camp_assignment: Dict
-    ) -> pd.DataFrame:
+        self, base_camp_assignment: Dict) -> pd.DataFrame:
         """Convert base camp assignment dict to DataFrame."""
         rows = []
         for team_id, base_camp_id in base_camp_assignment.items():
@@ -113,8 +112,7 @@ class SolutionReporter:
         print(df[display_cols].head(10).to_string(index=False))
 
     def export_to_csv(
-        self, schedule: Dict, base_camp_assignment: Dict, output_prefix: str = "output"
-    ):
+        self, schedule: Dict, base_camp_assignment: Dict, output_prefix: str = "output"):
         """Export schedule and base camp assignment to CSV files."""
         schedule_df = self.schedule_to_dataframe(schedule)
         base_camp_df = self.base_camp_assignment_to_dataframe(base_camp_assignment)

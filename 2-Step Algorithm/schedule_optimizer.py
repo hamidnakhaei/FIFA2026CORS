@@ -2,6 +2,7 @@
 Schedule optimization solver (Step A) for FIFA 2026 Group-Stage.
 Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPIs.
 """
+import numpy as np
 from datetime import datetime, timedelta
 import pandas as pd
 from typing import Dict
@@ -32,6 +33,7 @@ class ScheduleOptimizer:
         self.matches = data_loader.get_matches()
         self.venues = data_loader.get_venues()
         self.teams = data_loader.get_teams()
+        self.base_camps = data_loader.get_base_camps()
 
         # Get sets and indices
         (
@@ -52,7 +54,80 @@ class ScheduleOptimizer:
         self.date_time_slots = self.T
         self.slot_index_to_datetime = {i: slot for i, slot in enumerate(self.date_time_slots)}
         self.datetime_to_slot_index = {slot: i for i, slot in enumerate(self.date_time_slots)}
+        
+        # Compute KPI normalization factors
+        self.kpi_normalization_factors = self._compute_kpi_normalization_factors()
 
+    def _compute_kpi_normalization_factors(self) -> Dict:
+        """
+        Compute reference/baseline values for each KPI to normalize them.
+        KPI_normalized = KPI / reference_value makes all KPIs dimensionless and comparable.
+        
+        Returns dict mapping kpi_name -> reference_value
+        """
+        factors = {}
+        
+        # KPI 1.2: Travel dispersion (km)
+        # Worst case: all teams travel max distance for all matches
+        max_dist = self.params.get("dist", {})
+        if max_dist:
+            factors["kpi_1_2"] = max(max_dist.values()) * len(self.M) * 2.0  # Upper bound estimate
+        else:
+            factors["kpi_1_2"] = 100000.0  # Default fallback
+        
+        # KPI 1.3: Circadian shift cost (hours penalty)
+        # Worst case: all teams at wrong timezone, all matches in subjective night
+        max_penalty_per_match = 8.0  # Max circadian penalty per match
+        factors["kpi_1_3"] = max_penalty_per_match * len(self.M) * 2.0  # 2 teams per match
+        
+        # KPI 1.4: Geographic dispersion (count)
+        # Range: 0 to 3 clusters per team × 32 teams
+        factors["kpi_1_4"] = 3.0 * len(self.I)
+        
+        # KPI 1.6: Rest asymmetry (hours)
+        # Worst case: max rest difference across all matches
+        max_rest_hours = 7 * 24  # Max rest in group stage
+        factors["kpi_1_6"] = max_rest_hours * len(self.M)
+        
+        # KPI 1.7: Visa restrictions (count)
+        # Worst case: all affected teams play at US stadiums
+        us_stadiums = self.venues[self.venues["country"] == "USA"]["venue_id"].tolist()
+        ban_teams = set(self.params.get("us_visa_ban_teams", []))
+        factors["kpi_1_7"] = len(ban_teams) * len(us_stadiums)  # Maximum affected matches
+        
+        # KPI 2.2: Heat load (WBGT hours per team)
+        # Excess above 28°C, worst case ~10°C excess × 3 matches × 32 teams
+        factors["kpi_2_2"] = 10.0 * 3 * len(self.I)
+        
+        # KPI 3.3: First-mover balance (standard deviation)
+        # Range: 0 to ~2 early slots per team
+        factors["kpi_3_3"] = 2.0 * len(self.I)
+        
+        # KPI 4.1: Venue-load balance (mean absolute deviation)
+        # Worst case: unbalanced distribution of 72 matches across 12 stadiums
+        avg_matches = len(self.M) / len(self.S) if len(self.S) > 0 else 1
+        max_deviation = len(self.M) - avg_matches  # Max possible deviation
+        factors["kpi_4_1"] = max_deviation * len(self.S) / 2  # Typical MAD estimate
+        
+        # KPI 4.2: Same-city overlap (count)
+        # Worst case: multiple overlaps across all cities and slots
+        factors["kpi_4_2"] = len(self.M) * len(self.T) / 10  # Rough estimate
+        
+        # KPI 5.2: Marquee-match overlap penalty (count × popularity)
+        # Worst case: all high-profile matches in same slot
+        factors["kpi_5_2"] = len(self.M)  # Number of high-profile match pairs
+        
+        # KPI 5.3: Host-city economic equity (mean absolute deviation of commercial value)
+        # Range: depends on match values, normalize by sum of all match values
+        total_match_value = sum(self.params.get("match_value", {}).values())
+        factors["kpi_5_3"] = total_match_value / 2 if total_match_value > 0 else 1.0
+        
+        # Apply minimum threshold to avoid division by zero
+        for kpi in factors:
+            factors[kpi] = max(factors[kpi], 0.1)
+        
+        return factors
+    
     def _compute_kpi_coefficients(self) -> Dict:
         """
         Precompute KPI contributions for each (match, time_slot, stadium) combination.
@@ -202,6 +277,7 @@ class ScheduleOptimizer:
         model.o_ct = Var(model.G, model.T, within=NonNegativeReals)  # KPI 4.2: Same-city overlap
         model.o_P_mm_prime = Var(model.M, model.M, model.T, within=NonNegativeReals)  # KPI 5.2: Marquee match overlap
         model.p_s = Var(model.S, within=NonNegativeReals)  # KPI 5.3: Host-city economic equity deviation
+        model.vc_s = Var(model.S, within=NonNegativeReals)  # KPI 5.3: Venue commercial value
         model.venue_count = Var(model.S, within=NonNegativeIntegers)  # Number of matches per venue
         model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # Rest days for team i before match m
 
@@ -225,40 +301,62 @@ class ScheduleOptimizer:
         # + Auxiliary variable KPIs (1.6, 3.3, 4.1, 4.2, 5.2, 5.3)
         def objective_rule(model):
             weights = self.params.get("weights", {})
+            norm_factors = self.kpi_normalization_factors
             
-            # Direct coefficient-based KPIs
+            # Direct coefficient-based KPIs (already include weights)
+            # Normalize by the sum of their normalization factors weighted by their weights
             direct_cost = sum(
                 model.kpi_cost[m, t, s] * model.x[m, t, s]
                 for m in model.M
                 for t in model.T
                 for s in model.S
             )
+            # Normalize direct cost by typical scale
+            direct_cost_norm = (
+                weights.get("kpi_1_2", 0.0) * norm_factors.get("kpi_1_2", 1.0) +
+                weights.get("kpi_1_3", 0.0) * norm_factors.get("kpi_1_3", 1.0) +
+                weights.get("kpi_1_4", 0.0) * norm_factors.get("kpi_1_4", 1.0) +
+                weights.get("kpi_1_7", 0.0) * norm_factors.get("kpi_1_7", 1.0) +
+                weights.get("kpi_2_2", 0.0) * norm_factors.get("kpi_2_2", 1.0)
+            )
+            direct_cost_normalized = (
+                direct_cost / direct_cost_norm if direct_cost_norm > 0 else direct_cost
+            )
             
+            # Auxiliary KPIs: normalize by their reference values
             # KPI 1.6: Rest asymmetry (sum of rest differences)
             kpi_1_6 = sum(model.delta_m[m] for m in model.M)
+            kpi_1_6_normalized = kpi_1_6 / norm_factors.get("kpi_1_6", 1.0)
             
             # KPI 3.3: First-mover balance (sum of deviations)
             kpi_3_3 = sum(model.e_i[i] for i in model.I)
+            kpi_3_3_normalized = kpi_3_3 / norm_factors.get("kpi_3_3", 1.0)
             
             # KPI 4.1: Venue-load balance (mean absolute deviation of match counts)
             kpi_4_1 = sum(model.d_s[s] for s in model.S)
+            kpi_4_1_normalized = kpi_4_1 / norm_factors.get("kpi_4_1", 1.0)
             
             # KPI 4.2: Same-city overlap (count of overlaps)
             kpi_4_2 = sum(model.o_ct[g, t] for g in model.G for t in model.T)
+            kpi_4_2_normalized = kpi_4_2 / norm_factors.get("kpi_4_2", 1.0)
             
-            # KPI 5.2: Marquee-match slot quality (negative for maximization)
+            # KPI 5.2: Marquee-match overlap penalty
             kpi_5_2 = sum(model.o_P_mm_prime[m1, m2, t] for m1 in model.M for m2 in model.M for t in model.T)
+            kpi_5_2_normalized = kpi_5_2 / norm_factors.get("kpi_5_2", 1.0)
             
-            # KPI 5.3: Host-city economic equity (mean absolute deviation of venue commercial value)
+            # KPI 5.3: Host-city economic equity
             kpi_5_3 = sum(model.p_s[s] for s in model.S)
-            
-            return (direct_cost +
-                    weights.get("kpi_1_6", 0.0) * kpi_1_6 +
-                    weights.get("kpi_3_3", 0.0) * kpi_3_3 +
-                    weights.get("kpi_4_1", 0.0) * kpi_4_1 +
-                    weights.get("kpi_4_2", 0.0) * kpi_4_2 +
-                    weights.get("kpi_5_2", 0.0) * kpi_5_2 +
-                    weights.get("kpi_5_3", 0.0) * kpi_5_3)
+            kpi_5_3_normalized = kpi_5_3 / norm_factors.get("kpi_5_3", 1.0)
+
+
+            # Combine: now all KPIs are normalized to ~[0, scale] range
+            return (direct_cost_normalized +
+                    weights.get("kpi_1_6", 0.0) * kpi_1_6_normalized +
+                    weights.get("kpi_3_3", 0.0) * kpi_3_3_normalized +
+                    weights.get("kpi_4_1", 0.0) * kpi_4_1_normalized +
+                    weights.get("kpi_4_2", 0.0) * kpi_4_2_normalized +
+                    weights.get("kpi_5_2", 0.0) * kpi_5_2_normalized +
+                    weights.get("kpi_5_3", 0.0) * kpi_5_3_normalized)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
 
@@ -288,38 +386,88 @@ class ScheduleOptimizer:
         model.h_kpi_1_6_a = Constraint(model.M, rule=rest_asymmetry_constraint_1)
         model.h_kpi_1_6_b = Constraint(model.M, rule=rest_asymmetry_constraint_2)
 
+        # Rest computation: r_im[i,m] = hours of rest before match m for team i
+        # For each team and pair of their matches (m_prev, m), if m_prev happens before m:
+        # r_im[i,m] >= time_between(t_prev, t) - match_duration - Big_M*(2 - x[m_prev,t_prev,s_prev] - x[m,t,s])
+        match_duration = self.params["match_duration"]
+        big_m = 7 * 24  # Max 7 days between group stage matches
+        
+        rest_constraint_idx = 0
+        rest_constraints = {}
+        
+        for i in self.I:
+            team_matches = list(self.M_i.get(i, []))
+            # For each pair of matches this team plays
+            for m_prev in team_matches:
+                for m in team_matches:
+                    if m_prev == m:
+                        continue
+                    
+                    # For each pair of time slots
+                    for t_prev in model.T:
+                        for s_prev in model.S:
+                            for t in model.T:
+                                for s in model.S:
+                                    # Compute time difference
+                                    try:
+                                        date_prev, time_prev = self.slot_index_to_datetime[t_prev]
+                                        date_curr, time_curr = self.slot_index_to_datetime[t]
+                                        
+                                        dt_prev = datetime.strptime(f"{date_prev} {time_prev}", "%Y-%m-%d %H:%M")
+                                        dt_curr = datetime.strptime(f"{date_curr} {time_curr}", "%Y-%m-%d %H:%M")
+                                        time_diff_hours = (dt_curr - dt_prev).total_seconds() / 3600.0
+                                        rest_hours = time_diff_hours - match_duration
+                                        
+                                        # Only for positive rest (m is after m_prev)
+                                        if rest_hours > 0:
+                                            rest_constraint_idx += 1
+                                            constraint_key = (i, m, rest_constraint_idx)
+                                            rest_constraints[constraint_key] = (
+                                                model.r_im[i, m] + 
+                                                big_m * (2 - model.x[m_prev, t_prev, s_prev] - model.x[m, t, s])
+                                                >= rest_hours
+                                            )
+                                    except:
+                                        continue
+        
+        # Add all rest constraints to model
+        for idx, (key, constraint_expr) in enumerate(rest_constraints.items()):
+            setattr(model, f"h_kpi_rest_{idx}", Constraint(expr=constraint_expr))
+
+        # ---------------------------------------------------------------------------------------
+
         # KPI 3.3: First-Mover Balance
         # e_i >= a_i - 1 and e_i >= 1 - a_i (where a_i is count of early kickoffs)
         # Simplified: penalize deviation from equal distribution across teams
-        def first_mover_constraint_1(model, i):
-            team_matches = list(self.M_i.get(i, []))
-            if len(team_matches) == 0:
-                return Constraint.Skip
-            # Count early matches for this team (kickoff before 15:00)
-            early_count = sum(
-                model.x[m, t, s] 
-                for m in team_matches 
-                for t in model.T 
-                for s in model.S
-                if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
-            )
-            return model.e_i[i] >= early_count - 1
+        # def first_mover_constraint_1(model, i):
+        #     team_matches = list(self.M_i.get(i, []))
+        #     # Count early matches for this team (kickoff before 15:00)
+        #     early_count = sum(
+        #         model.x[m, t, s] 
+        #         for m in team_matches 
+        #         for t in model.T 
+        #         for s in model.S
+        #         if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
+        #     )
+        #     return model.e_i[i] >= early_count - 1
 
-        def first_mover_constraint_2(model, i):
-            team_matches = list(self.M_i.get(i, []))
-            if len(team_matches) == 0:
-                return Constraint.Skip
-            early_count = sum(
-                model.x[m, t, s]
-                for m in team_matches
-                for t in model.T
-                for s in model.S
-                if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
-            )
-            return model.e_i[i] >= 1 - early_count
+        # def first_mover_constraint_2(model, i):
+        #     team_matches = list(self.M_i.get(i, []))
+        #     if len(team_matches) == 0:
+        #         return Constraint.Skip
+        #     early_count = sum(
+        #         model.x[m, t, s]
+        #         for m in team_matches
+        #         for t in model.T
+        #         for s in model.S
+        #         if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
+        #     )
+        #     return model.e_i[i] >= 1 - early_count
 
-        model.h_kpi_3_3_a = Constraint(model.I, rule=first_mover_constraint_1)
-        model.h_kpi_3_3_b = Constraint(model.I, rule=first_mover_constraint_2)
+        # model.h_kpi_3_3_a = Constraint(model.I, rule=first_mover_constraint_1)
+        # model.h_kpi_3_3_b = Constraint(model.I, rule=first_mover_constraint_2)
+
+        # ---------------------------------------------------------------------------------------
 
         # KPI 4.1: Venue-Load Balance
         # venue_count[s] = sum of matches at stadium s
@@ -327,7 +475,7 @@ class ScheduleOptimizer:
         def venue_count_constraint(model, s):
             return model.venue_count[s] == sum(model.x[m, t, s] for m in model.M for t in model.T)
 
-        mean_venue_count = len(self.M) / len(self.S) if len(self.S) > 0 else 1
+        mean_venue_count = len(self.M) / len(self.S)
         
         def venue_load_deviation_1(model, s):
             return model.d_s[s] >= model.venue_count[s] - mean_venue_count
@@ -338,6 +486,8 @@ class ScheduleOptimizer:
         model.h_kpi_4_1_count = Constraint(model.S, rule=venue_count_constraint)
         model.h_kpi_4_1_dev_1 = Constraint(model.S, rule=venue_load_deviation_1)
         model.h_kpi_4_1_dev_2 = Constraint(model.S, rule=venue_load_deviation_2)
+
+        # ---------------------------------------------------------------------------------------
 
         # KPI 4.2: Same-City Overlap
         # o_ct[c, t] >= count of matches in city c at slot t minus 1 (or 0)
@@ -359,12 +509,12 @@ class ScheduleOptimizer:
                     for m in model.M
                     for s in stadiums
                 )
-                # Penalty: any overlap (more than 1 match) gets added
-                overlap_penalty += max(0, city_match_count - 1)
             
-            return model.o_ct[g, t] >= overlap_penalty
+            return model.o_ct[g, t] >= city_match_count - 1  # Penalty if more than 1 match in same city at same time
 
         model.h_kpi_4_2 = Constraint(model.G, model.T, rule=same_city_overlap_constraint)
+
+        # ---------------------------------------------------------------------------------------
 
         # KPI 5.2: Marquee-Match Slot Quality with Overlap Penalty
         # o_P_mm_prime[m, m', t] >= x[m,t,s1] + x[m',t,s2] - 1 (overlap if both in same slot)
@@ -374,8 +524,9 @@ class ScheduleOptimizer:
             # Penalty for two high-profile matches sharing a slot
             mu_m1 = self.params.get("match_value", {}).get(m1, 0.5)
             mu_m2 = self.params.get("match_value", {}).get(m2, 0.5)
-            # Only penalize if both are popular
-            if mu_m1 >= 0.7 and mu_m2 >= 0.7:
+            # Only penalize if both are at top 20
+            threshold = np.quantile(list(self.params["match_value"].values()), 0.8)
+            if mu_m1 >= threshold and mu_m2 >= threshold:
                 return model.o_P_mm_prime[m1, m2, t] >= (
                     sum(model.x[m1, t, s] for s in model.S) +
                     sum(model.x[m2, t, s] for s in model.S) - 1
@@ -384,17 +535,60 @@ class ScheduleOptimizer:
 
         model.h_kpi_5_2 = Constraint(model.M, model.M, model.T, rule=marquee_overlap_constraint)
 
+        # ---------------------------------------------------------------------------------------
+
         # KPI 5.3: Host-City Economic Equity
-        # p_s >= |venue_commercial_value[s] - mean_vc| 
-        # Simplified: penalize venue load imbalance (similar to 4.1)
+        # Compute venue commercial value: vc_s = Σ_{m:v(m)=s} μ_m * q_t
+        # where q_t = 1.0 if primetime (19-23), 0 otherwise
+        # Then p_s >= |vc_s - mean_vc|
+        
+        # Precompute match values and primetime indicators
+        match_values = {}  # match_id -> value
+        primetime_indicator = {}  # (m, t) -> 1 if primetime, 0 otherwise
+        
+        for m in self.M:
+            match_values[m] = self.params.get("match_value", {}).get(m, 0.5)
+        
+        for t_idx, (date, time_str) in enumerate(self.date_time_slots):
+            try:
+                kickoff_hour = float(time_str.split(":")[0])
+                is_primetime = 1.0 if 19.0 <= kickoff_hour <= 23.0 else 0.0
+            except:
+                is_primetime = 0.0
+            
+            for m in self.M:
+                primetime_indicator[(m, t_idx)] = is_primetime
+        
+        # Auxiliary variables for venue commercial value
+        model.vc_s = Var(model.S, within=NonNegativeReals)  # Venue commercial value
+        
+        # Constraint: vc_s[s] = Σ_{m,t} x[m,t,s] * μ_m * q_t (match value * primetime bonus)
+        def venue_commercial_constraint(model, s):
+            return model.vc_s[s] == sum(
+                model.x[m, t, s] * match_values[m] * primetime_indicator[(m, t)] * self.params["popularity"][m]
+                for m in model.M
+                for t in model.T
+            )
+        
+        model.h_kpi_5_3_vc = Constraint(model.S, rule=venue_commercial_constraint)
+        
+        # Mean commercial value across venues
+        mean_venue_commercial = (
+            sum(match_values[m] * self.params["popularity"][m] for m in self.M) / len(self.S)
+            if len(self.S) > 0 else 1.0
+        )
+        
+        # Constraint: p_s >= |vc_s[s] - mean_vc| (mean absolute deviation)
         def economic_equity_constraint_1(model, s):
-            return model.p_s[s] >= model.venue_count[s] - mean_venue_count
+            return model.p_s[s] >= model.vc_s[s] - mean_venue_commercial
 
         def economic_equity_constraint_2(model, s):
-            return model.p_s[s] >= mean_venue_count - model.venue_count[s]
+            return model.p_s[s] >= mean_venue_commercial - model.vc_s[s]
 
         model.h_kpi_5_3_dev_1 = Constraint(model.S, rule=economic_equity_constraint_1)
         model.h_kpi_5_3_dev_2 = Constraint(model.S, rule=economic_equity_constraint_2)
+
+        # =====================================================================================
 
         # Constraints
 
