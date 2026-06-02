@@ -23,17 +23,15 @@ from pyomo.environ import (
 
 
 class ScheduleOptimizer:
-    """Solve Step A: optimize match schedule while holding base camps fixed."""
+    """Solve Step A: optimize match schedule (teams have no fixed base camps)."""
 
-    def __init__(self, data_loader, kpi_calculator, base_camp_assignment: Dict):
+    def __init__(self, data_loader, kpi_calculator):
         self.loader = data_loader
         self.kpi_calc = kpi_calculator
-        self.base_camp_assignment = base_camp_assignment
 
         self.matches = data_loader.get_matches()
         self.venues = data_loader.get_venues()
         self.teams = data_loader.get_teams()
-        self.base_camps = data_loader.get_base_camps()
 
         # Get sets and indices
         (
@@ -57,7 +55,8 @@ class ScheduleOptimizer:
         
         # Compute KPI normalization factors
         self.kpi_normalization_factors = self._compute_kpi_normalization_factors()
-
+        
+        
     def _compute_kpi_normalization_factors(self) -> Dict:
         """
         Compute reference/baseline values for each KPI to normalize them.
@@ -131,7 +130,7 @@ class ScheduleOptimizer:
         Returns dict mapping (m, t, s) -> weighted_kpi_cost
         t is an index into date_time_slots.
         
-        Each coefficient represents the marginal cost of assigning x[m,t,s]=1.
+        This method only computes KPI 1.7 and 2.2.
         """
         kpi_costs = {}
         weights = self.params.get("weights", {})
@@ -142,65 +141,10 @@ class ScheduleOptimizer:
             
             team_a_id = match["team_a_id"]
             team_b_id = match["team_b_id"]
-            match_group = match["group"]
             
             for t_idx, (date, time_str) in enumerate(self.date_time_slots):
                 for s in self.S:
                     cost = 0.0
-                    
-                    # KPI 1.2: Intra-group travel dispersion
-                    # TD_i = 2 * Σ dist(base_camp_i, stadium)
-                    bc_a = self.base_camp_assignment[team_a_id]
-                    dist_a = self.params.get("dist", {}).get((bc_a, s), 0.0)
-                    cost += 2.0 * dist_a * weights.get("kpi_1_2", 0.0)
-                    
-                    bc_b = self.base_camp_assignment[team_b_id]
-                    dist_b = self.params.get("dist", {}).get((bc_b, s), 0.0)
-                    cost += 2.0 * dist_b * weights.get("kpi_1_2", 0.0)
-                    
-                    # KPI 1.3: Circadian shift cost
-                    # φ(τ_hat) = perceived night penalty for each team
-                    try:
-                        kickoff_hour = float(time_str.split(":")[0])
-                    except:
-                        kickoff_hour = 12.0
-                    
-                    for team_id in [team_a_id, team_b_id]:
-                        bc_id = self.base_camp_assignment[team_id]
-                        camp_tz = self.params.get("tzone_basecamp", {}).get(bc_id, 0)
-                        stadium_tz = self.params.get("tzone_stadium", {}).get(s, 0)
-                        tz_offset = stadium_tz - camp_tz
-                        
-                        # Perceived kickoff time (mod 24)
-                        tau_hat = (kickoff_hour - tz_offset) % 24
-                        
-                        # Circadian penalty function φ(τ_hat)
-                        tau_lo = 23.0  # Start of subjective night
-                        tau_hi = 7.0   # End of subjective night
-                        max_penalty = 8.0
-                        
-                        if tau_hat >= tau_lo or tau_hat <= tau_hi:
-                            if tau_hat >= tau_lo:
-                                penalty = min(tau_hat - tau_lo, 24 - (tau_hat - tau_lo))
-                            else:
-                                penalty = min(tau_hat + 24 - tau_lo, 24 - (tau_hat + 24 - tau_lo))
-                            penalty = min(penalty, max_penalty)
-                        else:
-                            penalty = 0.0
-                        
-                        cost += penalty * weights["kpi_1_3"]
-                    
-                    # KPI 1.4: Match-venue geographic dispersion
-                    # Count unique clusters/countries visited by each team
-                    for team_id in [team_a_id, team_b_id]:
-                        bc_id = self.base_camp_assignment[team_id]
-                        bc_country = self.base_camps[self.base_camps["base_camp_id"] == bc_id]["country"].values
-                        stadium_country = self.venues[self.venues["venue_id"] == s]["country"].values
-                        
-                        if len(bc_country) > 0 and len(stadium_country) > 0:
-                            # Cost increases if crossing country border
-                            if bc_country[0] != stadium_country[0]:
-                                cost += weights["kpi_1_4"]
                     
                     # KPI 1.7: Entry and visa restriction exposure
                     # Penalty if match at US stadium and team has visa issues
@@ -211,9 +155,9 @@ class ScheduleOptimizer:
                         
                         for team_id in [team_a_id, team_b_id]:
                             if team_id in ban_teams:
-                                cost += 1.0 * weights["kpi_1_7"]
+                                cost += 1.0 * weights.get("kpi_1_7", 0.0)
                             elif team_id in bond_teams:
-                                cost += 0.5 * weights["kpi_1_7"]
+                                cost += 0.5 * weights.get("kpi_1_7", 0.0)
                     
                     # KPI 2.2: Per-team heat load
                     # Excess WBGT: h_mt = max(0, WBGT - 28)
@@ -225,30 +169,9 @@ class ScheduleOptimizer:
                     
                     wbgt_estimated = 0.5 * temp_c + 14.0
                     excess_wbgt = max(0.0, wbgt_estimated - 28.0)
-                    cost += excess_wbgt * 2.0 * weights["kpi_2_2"]  # Factor of 2 for two teams
-
-                    # KPI 1.6: Rest asymmetry between opponents
-                    # This requires knowing relative match timing, use heuristic coefficient
+                    cost += excess_wbgt * 2.0 * weights.get("kpi_2_2", 0.0)  # Factor of 2 for two teams
                     
-                    # KPI 3.3: Round-order balance (first-mover)
-                    # Heuristic: penalize afternoon/evening slots for balance
-
-                    
-                    # KPI 4.1: Venue-load balance
-                    # Penalize underutilized stadiums (encourage spread)
-
-                    
-                    # KPI 4.2: Same-city overlap
-                    # Penalize multiple matches in same city on same date (address operationally)
-                    
-                    # KPI 5.2: Marquee-match slot quality
-                    # Bonus for high-profile matches in primetime slots
-                    
-                    # KPI 5.3: Host-city economic equity
-                    # Distribute commercial value across venues
-
-                
-
+                    kpi_costs[(m, t_idx, s)] = cost
         
         return kpi_costs
 
@@ -259,32 +182,49 @@ class ScheduleOptimizer:
         # Sets
         model.M = Set(initialize=list(self.M))  # Matches
         model.T = Set(initialize=list(self.T))  # Time slots (date/time combinations)
-        model.T_indx = Set(initialize=list(range(len(self.T))))  # Time slots (date/time combinations)
         model.S = Set(initialize=list(self.S))  # Stadiums
         model.I = Set(initialize=list(self.I))  # Teams
         model.G = Set(initialize=list(self.G))  # Groups
+        model.M_i = Set(model.I, initialize=self.M_i)  # Matches per team
 
         # Decision Variables
         model.x = Var(model.M, model.T, model.S, within=Binary)  # Assignment vars
         model.y = Var(model.G, model.T, within=Binary)  # Final slot indicator
 
-        # Auxiliary variables for KPIs (used in constraints)
+        # ===== AUXILIARY VARIABLES FOR INTER-STADIUM METRICS =====
+        
+        # Stadium assignment for each team's match position
+        # For team i's kth match (k=0,1,2), which stadium is it at?
+        # stadium_i_k ∈ S (select exactly one stadium)
+        model.stadium_i_k = Var(model.I, model.M_i[i], model.S, within=Binary)  # (team, match_id, stadium)
+        # Binary transition indicators for inter-stadium costs
+        # For team i between match positions k and k', is it playing at (s1, s2)?
+        model.transition_i_k1_k2_s1_s2 = Var(model.I, model.M_i[i], model.M_i[i], model.S, model.S, within=Binary)
+        # Continuous travel distance for each team (KPI 1.2)
+        model.travel_distance_i = Var(model.I, within=NonNegativeReals)
+        # Cumulative timezone offset for each match position (KPI 1.3)
+        # tz_offset_i_k = cumulative tz from team i's first stadium to kth stadium
+        model.tz_offset_i_k = Var(model.I, within=NonNegativeReals, bounds=(0, 24))
+        # Country transition count for each team (KPI 1.4)
+        model.country_transitions_i = Var(model.I, within=NonNegativeIntegers, bounds=(0, 2))
+
+        # ===== AUXILIARY VARIABLES FOR OTHER KPIS =====
         model.delta_m = Var(model.M, within=NonNegativeReals)  # KPI 1.6: Rest asymmetry per match
+        model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # KPI 1.6: Rest days for team i before match m
         model.e_i = Var(model.I, within=NonNegativeReals)  # KPI 3.3: First-mover balance per team
         model.d_s = Var(model.S, within=NonNegativeReals)  # KPI 4.1: Venue load deviation
+        model.venue_count = Var(model.S, within=NonNegativeIntegers)  # KPI 4.1: Number of matches per venue
         model.o_ct = Var(model.G, model.T, within=NonNegativeReals)  # KPI 4.2: Same-city overlap
         model.o_P_mm_prime = Var(model.M, model.M, model.T, within=NonNegativeReals)  # KPI 5.2: Marquee match overlap
         model.p_s = Var(model.S, within=NonNegativeReals)  # KPI 5.3: Host-city economic equity deviation
         model.vc_s = Var(model.S, within=NonNegativeReals)  # KPI 5.3: Venue commercial value
-        model.venue_count = Var(model.S, within=NonNegativeIntegers)  # Number of matches per venue
-        model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # Rest days for team i before match m
-
+        
         # Parameters
         model.N_c = Param(
             ["USA", "MEX", "CAN"], initialize=self.params["N_c"]
         )  # Matches per country requirement (indexed)
 
-        # Precompute KPI coefficients for each (match, time_slot, stadium)
+        # Precompute KPI coefficients for each (match, time_slot, stadium) for KPI 1.7 and 2.2
         kpi_coefficients = self._compute_kpi_coefficients()
         model.kpi_cost = Param(
             model.M,
@@ -294,26 +234,137 @@ class ScheduleOptimizer:
                         for m in self.M for t in self.T for s in self.S},
         )
 
+        # ===== CONSTRAINTS FOR INTER-STADIUM METRICS (KPI 1.2, 1.3, 1.4) =====
+        
+        # C1: Link stadium assignment to schedule
+        # For team i's kth match: exactly one stadium, and it must match the schedule assignment
+        def team_stadium_assignment(model, i, k):
+            """Each team's kth match is assigned to exactly one stadium."""
+            return sum(model.stadium_i_k[i, k, s] for s in model.S) == 1
+        
+        for i in self.I:
+            for k in self.M_i[i]:
+                model.add_constraint(f"c_stadium_assign_{i}_{k}", team_stadium_assignment(model, i, k))
+        
+        model.c_stadium_assign = Constraint(model.I, model.M_i[i], rule=team_stadium_assignment)
+        
+        # C2: Stadium assignment must match schedule
+        # If x[m_i_k, t, s] = 1, then stadium_i_k[i, k, s] = 1
+        def stadium_schedule_link(model, i, k, s):
+            """Stadium assignment linked to schedule assignment."""
+            # If schedule assigns match to this stadium, this team stadium var must agree
+            return model.stadium_i_k[i, k, s] == sum(model.x[k, t, s] for t in model.T)
+        
+        model.c_stadium_link = Constraint(model.I, model.M_i[i], model.S, rule=stadium_schedule_link)
+        
+        # C3: Inter-stadium transitions (for computing travel, timezone, country costs)
+        # For team i between matches k and k+1, exactly one (s1, s2) pair is active
+        def transition_count(model, i, k1, k2):
+            if k1 >= k2:
+                return Constraint.Skip
+            """Each team has exactly one transition between consecutive match positions."""
+            return sum(model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] for s1 in model.S for s2 in model.S) == 1
+        
+        model.c_transition_count = Constraint(model.I, model.M_i[i], model.M_i[i], rule=transition_count)
+        
+        # C4: Transition must match stadium assignments
+        # transition_i_k1_k2_s1_s2 = 1 only if stadium_i_k[i, k1, s1] = 1 AND stadium_i_k[i, k2, s2] = 1
+        def transition_link1(model, i, k1, k2, s1, s2):
+            """Transition active iff both stadiums match assignment."""
+            if k1 >= k2:
+                return Constraint.Skip
+            return model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] <= model.stadium_i_k[i, k1, s1]
+        
+        def transition_link2(model, i, k1, k2, s1, s2):
+            """Transition active iff both stadiums match assignment."""
+            if k1 >= k2:
+                return Constraint.Skip
+            return model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] <= model.stadium_i_k[i, k2, s2]
+        
+        model.c_transition_link1 = Constraint(model.I, model.M_i[i], model.M_i[i], model.S, model.S, rule=transition_link1)
+        model.c_transition_link2 = Constraint(model.I, model.M_i[i], model.M_i[i], model.S, model.S, rule=transition_link2)
+        
+        # C5: KPI 1.2 - Travel distance (sum of inter-stadium distances)
+        # travel_i = Σ_{s1,s2} transition_i_0_s1_s2 * dist(s1, s2) + transition_i_1_s1_s2 * dist(s1, s2)
+        def travel_distance_calc(model, i):
+            """Compute total travel distance for team i (inter-stadium, no round-trip factor)."""
+            dist_dict = self.params.get("dist", {})
+            travel = 0.0
+            for k1 in model.M_i[i]:  
+                for k2 in model.M_i[i]:
+                    if k1 >= k2:
+                        continue
+                    for s1 in model.S:
+                        for s2 in model.S:
+                            d = dist_dict.get((s1, s2), 0.0)
+                            travel += model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] * d
+            return model.travel_distance_i[i] == travel
+        
+        model.c_travel_distance = Constraint(model.I, rule=travel_distance_calc)
+        
+        # C6: KPI 1.3 - Cumulative jet-lag (timezone offset)
+        def tz_offset_calc(model, i):
+            """Cumulative timezone offset for team i's kth match."""
+            tz_stadium = self.params.get("tzone_stadium", {})
+            
+            # Later matches: cumulative offset from first stadium
+            # tz_offset_i_k = tz(stadium_i_k) - tz(stadium_i_0)
+            # Determine s_k and s_0 from stadium assignments and compute offset
+            expr = 0
+            for s_0 in model.S:
+                for s_k in model.S:
+                    tz_0 = tz_stadium.get(s_0, 0)
+                    tz_k = tz_stadium.get(s_k, 0)
+                    tz_diff = tz_k - tz_0
+                    # Activate this term if both s_0 and s_k are assigned
+                    expr += tz_diff * sum(model.transition_i_k1_k2_s1_s2[i, k1, k2, s_0, s_k] for k1 in model.M_i[i] for k2 in model.M_i[i] if k1 < k2)
+            return model.tz_offset_i_k[i] == expr
+        
+        model.c_tz_offset = Constraint(model.I, rule=tz_offset_calc)
+        
+        # C7: KPI 1.4 - Country transitions
+        # Count how many times team i crosses a country border between consecutive stadiums
+        def country_transitions_calc(model, i):
+            """Count inter-stadium country transitions for team i."""
+            stadium_country = {}
+            for _, venue in self.venues.iterrows():
+                stadium_country[venue["venue_id"]] = venue.get("country", "Unknown")
+            
+            transitions = 0.0
+            for k1 in model.M_i[i]:  
+                for k2 in model.M_i[i]:
+                    if k1 >= k2:
+                        continue
+                    for s1 in model.S:
+                        for s2 in model.S:
+                            c1 = stadium_country.get(s1, "Unknown")
+                            c2 = stadium_country.get(s2, "Unknown")
+                            # Add 1 to transitions count if countries differ and this transition is active
+                            if c1 != c2:
+                                transitions += model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2]
+            
+            return model.country_transitions_i[i] == transitions
+        
+        model.c_country_transitions = Constraint(model.I, rule=country_transitions_calc)
+
+        # ===== END INTER-STADIUM CONSTRAINTS =====
+
         # Objective: Minimize full weighted KPI (all 13 KPIs)
-        # Direct KPIs (1.2, 1.3, 1.4, 1.7, 2.2) via precomputed coefficients
+        # Direct KPIs (1.7, 2.2) via precomputed coefficients
+        # + Inter-stadium KPIs (1.2, 1.3, 1.4) via auxiliary constraints
         # + Auxiliary variable KPIs (1.6, 3.3, 4.1, 4.2, 5.2, 5.3)
         def objective_rule(model):
             weights = self.params.get("weights", {})
             norm_factors = self.kpi_normalization_factors
             
-            # Direct coefficient-based KPIs (already include weights)
-            # Normalize by the sum of their normalization factors weighted by their weights
+            # KPI 1.7 + 2.2: Direct coefficient-based KPIs (from precomputed coefficients)
             direct_cost = sum(
                 model.kpi_cost[m, t, s] * model.x[m, t, s]
                 for m in model.M
                 for t in model.T
                 for s in model.S
             )
-            # Normalize direct cost by typical scale
             direct_cost_norm = (
-                weights.get("kpi_1_2", 0.0) * norm_factors.get("kpi_1_2", 1.0) +
-                weights.get("kpi_1_3", 0.0) * norm_factors.get("kpi_1_3", 1.0) +
-                weights.get("kpi_1_4", 0.0) * norm_factors.get("kpi_1_4", 1.0) +
                 weights.get("kpi_1_7", 0.0) * norm_factors.get("kpi_1_7", 1.0) +
                 weights.get("kpi_2_2", 0.0) * norm_factors.get("kpi_2_2", 1.0)
             )
@@ -321,14 +372,59 @@ class ScheduleOptimizer:
                 direct_cost / direct_cost_norm if direct_cost_norm > 0 else direct_cost
             )
             
-            # Auxiliary KPIs: normalize by their reference values
+            # KPI 1.2: Travel distance (sum of inter-stadium distances)
+            kpi_1_2 = sum(model.travel_distance_i[i] for i in model.I)
+            kpi_1_2_normalized = kpi_1_2 / norm_factors.get("kpi_1_2", 1.0)
+            
+            # KPI 1.3: Jet-lag cost (circadian penalties based on cumulative timezone offset)
+            kpi_1_3 = 0.0
+            tau_lo = 23.0  # Start of subjective night
+            tau_hi = 7.0   # End of subjective night
+            max_penalty = 8.0
+            
+            for i in model.I:
+                if i not in self.team_match_sequence:
+                    continue
+                # For each match of this team
+                for k, match_id in enumerate(self.team_match_sequence[i]):
+                    # Get kickoff hour for this match
+                    match = self.matches[self.matches["match_id"] == match_id].iloc[0]
+                    match_date = match["date"]
+                    match_time = match.get("time", "12:00")
+                    
+                    try:
+                        kickoff_hour = float(match_time.split(":")[0])
+                    except:
+                        kickoff_hour = 12.0
+                    
+                    # Cumulative timezone offset
+                    tz_offset = model.tz_offset_i_k[i, k]
+                    
+                    # Perceived kickoff time
+                    tau_hat = (kickoff_hour - tz_offset) % 24
+                    
+                    # Circadian penalty (continuous approximation)
+                    # If in night window, penalty increases
+                    if tau_hat >= tau_lo or tau_hat <= tau_hi:
+                        if tau_hat >= tau_lo:
+                            penalty = min(tau_hat - tau_lo, 24 - (tau_hat - tau_lo))
+                        else:
+                            penalty = min(tau_hat + 24 - tau_lo, 24 - (tau_hat + 24 - tau_lo))
+                        penalty = min(penalty, max_penalty)
+                    else:
+                        penalty = 0.0
+                    
+                    kpi_1_3 += penalty
+            
+            kpi_1_3_normalized = kpi_1_3 / norm_factors.get("kpi_1_3", 1.0)
+            
+            # KPI 1.4: Country transitions (inter-stadium border crossings)
+            kpi_1_4 = sum(model.country_transitions_i[i] for i in model.I)
+            kpi_1_4_normalized = kpi_1_4 / norm_factors.get("kpi_1_4", 1.0)
+            
             # KPI 1.6: Rest asymmetry (sum of rest differences)
             kpi_1_6 = sum(model.delta_m[m] for m in model.M)
             kpi_1_6_normalized = kpi_1_6 / norm_factors.get("kpi_1_6", 1.0)
-            
-            # KPI 3.3: First-mover balance (sum of deviations)
-            kpi_3_3 = sum(model.e_i[i] for i in model.I)
-            kpi_3_3_normalized = kpi_3_3 / norm_factors.get("kpi_3_3", 1.0)
             
             # KPI 4.1: Venue-load balance (mean absolute deviation of match counts)
             kpi_4_1 = sum(model.d_s[s] for s in model.S)
@@ -346,11 +442,12 @@ class ScheduleOptimizer:
             kpi_5_3 = sum(model.p_s[s] for s in model.S)
             kpi_5_3_normalized = kpi_5_3 / norm_factors.get("kpi_5_3", 1.0)
 
-
-            # Combine: now all KPIs are normalized to ~[0, scale] range
+            # Combine all normalized KPIs
             return (direct_cost_normalized +
+                    weights.get("kpi_1_2", 0.0) * kpi_1_2_normalized +
+                    weights.get("kpi_1_3", 0.0) * kpi_1_3_normalized +
+                    weights.get("kpi_1_4", 0.0) * kpi_1_4_normalized +
                     weights.get("kpi_1_6", 0.0) * kpi_1_6_normalized +
-                    weights.get("kpi_3_3", 0.0) * kpi_3_3_normalized +
                     weights.get("kpi_4_1", 0.0) * kpi_4_1_normalized +
                     weights.get("kpi_4_2", 0.0) * kpi_4_2_normalized +
                     weights.get("kpi_5_2", 0.0) * kpi_5_2_normalized +
@@ -431,39 +528,6 @@ class ScheduleOptimizer:
         # Add all rest constraints to model
         for idx, (key, constraint_expr) in enumerate(rest_constraints.items()):
             setattr(model, f"h_kpi_rest_{idx}", Constraint(expr=constraint_expr))
-
-        # ---------------------------------------------------------------------------------------
-
-        # KPI 3.3: First-Mover Balance
-        # e_i >= a_i - 1 and e_i >= 1 - a_i (where a_i is count of early kickoffs)
-        # Simplified: penalize deviation from equal distribution across teams
-        # def first_mover_constraint_1(model, i):
-        #     team_matches = list(self.M_i.get(i, []))
-        #     # Count early matches for this team (kickoff before 15:00)
-        #     early_count = sum(
-        #         model.x[m, t, s] 
-        #         for m in team_matches 
-        #         for t in model.T 
-        #         for s in model.S
-        #         if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
-        #     )
-        #     return model.e_i[i] >= early_count - 1
-
-        # def first_mover_constraint_2(model, i):
-        #     team_matches = list(self.M_i.get(i, []))
-        #     if len(team_matches) == 0:
-        #         return Constraint.Skip
-        #     early_count = sum(
-        #         model.x[m, t, s]
-        #         for m in team_matches
-        #         for t in model.T
-        #         for s in model.S
-        #         if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
-        #     )
-        #     return model.e_i[i] >= 1 - early_count
-
-        # model.h_kpi_3_3_a = Constraint(model.I, rule=first_mover_constraint_1)
-        # model.h_kpi_3_3_b = Constraint(model.I, rule=first_mover_constraint_2)
 
         # ---------------------------------------------------------------------------------------
 
@@ -588,7 +652,7 @@ class ScheduleOptimizer:
 
         # =====================================================================================
 
-        # Constraints
+        # Hard Constraints
 
         # H1: Each match scheduled exactly once
         def h1_rule(model, m):

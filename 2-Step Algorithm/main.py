@@ -48,13 +48,12 @@ class TwoStepOptimizer:
         assignment = load_base_camp_assignment_from_data(base_camps)
         return assignment
 
-    def run_step_a(self, base_camp_assignment: Dict, time_limit: int = 300) -> Dict:
+    def run_step_a(self, time_limit: int = 300) -> Dict:
         """
         Step A: Optimize schedule while holding base camps fixed.
         Uses full KPI objective (all 13 KPIs) in the MILP solver.
 
         Args:
-            base_camp_assignment: Fixed base camp assignment
             time_limit: Solver time limit in seconds
 
         Returns:
@@ -62,7 +61,7 @@ class TwoStepOptimizer:
         """
 
         # Solve schedule optimization
-        optimizer = ScheduleOptimizer(self.loader, self.kpi_calc, base_camp_assignment)
+        optimizer = ScheduleOptimizer(self.loader, self.kpi_calc)
         optimizer.build_model()
 
         try:
@@ -110,35 +109,7 @@ class TwoStepOptimizer:
         Returns:
             Tuple of (updated_schedule, updated_base_camp_assignment)
         """
-        # Step A: Optimize schedule
-        print(f"\n---- Step A: Optimize Schedule ---")
-        step_a_result = self.run_step_a(base_camp_assignment, time_limit=step_a_time_limit)
-        new_schedule = step_a_result["schedule"]
-        objective_a = step_a_result["objective_full"]
-
-        # Step B: Optimize base camps
-        print(f"\n---- Step B: Optimize Base Camps ---")
-        new_base_camp = self.run_step_b(new_schedule)
         
-        # Record iteration history
-        iteration_info = {
-            "iteration": iteration_num + 1,
-            "objective_a": objective_a,
-            "timestamp": datetime.now().isoformat(),
-        }
-        self.iteration_history.append(iteration_info)
-
-         # Update best solution (compare full KPI objectives)
-        if objective_a < self.best_objective:
-            self.best_objective = objective_a
-            self.best_solution = {
-                "schedule": new_schedule,
-                "base_camp_assignment": base_camp_assignment,
-                "objective": objective_a,
-                "iteration": iteration_num + 1,
-            }
-            
-        return new_schedule, new_base_camp
 
     def run(
         self,
@@ -151,16 +122,17 @@ class TwoStepOptimizer:
             Dictionary with final solution and history
         """
 
-        # Initialize
-        base_camp_assignment = self.get_initial_base_camp_assignment()
-        # Main loop
-        for iteration_num in range(max_iterations):
-                print(f"\n=== Iteration {iteration_num + 1} ===")
-                schedule, base_camp_assignment = self.run_iteration(
-                iteration_num,
-                base_camp_assignment)
+        # Step A: Optimize schedule
+        print(f"\n---- Step A: Optimize Schedule ---")
+        step_a_result = self.run_step_a()
+        new_schedule = step_a_result["schedule"]
+        objective_a = step_a_result["objective_full"]
 
-        return self.best_solution
+        # Step B: Optimize base camps
+        print(f"\n---- Step B: Optimize Base Camps ---")
+        new_base_camp = self.run_step_b(new_schedule)
+        
+        return new_schedule, new_base_camp
 
 
 def main():
@@ -168,9 +140,11 @@ def main():
     # Initialize optimizer
     optimizer = TwoStepOptimizer(data_dir="data", solver_name="gurobi")
     # Run optimization
-    result = optimizer.run(max_iterations=10)
-    csv_results = pd.DataFrame(optimizer.iteration_history)
-    csv_results.to_csv("iteration_history.csv", index=False)
+    result = optimizer.run()
+    csv_results_1 = pd.DataFrame(result[0])
+    csv_results_1.to_csv("schedule_results.csv", index=False)
+    csv_results_2 = pd.DataFrame(result[1])
+    csv_results_2.to_csv("base_camp_results.csv", index=False)
     return result
 
 
