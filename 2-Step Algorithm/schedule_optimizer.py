@@ -70,10 +70,7 @@ class ScheduleOptimizer:
         # KPI 1.2: Travel dispersion (km)
         # Worst case: all teams travel max distance for all matches
         max_dist = self.params.get("dist", {})
-        if max_dist:
-            factors["kpi_1_2"] = max(max_dist.values()) * len(self.M) * 2.0  # Upper bound estimate
-        else:
-            factors["kpi_1_2"] = 100000.0  # Default fallback
+        factors["kpi_1_2"] = max(max_dist.values()) * len(self.M) * 2.0  # Upper bound estimate
         
         # KPI 1.3: Circadian shift cost (hours penalty)
         # Worst case: all teams at wrong timezone, all matches in subjective night
@@ -262,6 +259,7 @@ class ScheduleOptimizer:
         # Sets
         model.M = Set(initialize=list(self.M))  # Matches
         model.T = Set(initialize=list(self.T))  # Time slots (date/time combinations)
+        model.T_indx = Set(initialize=list(range(len(self.T))))  # Time slots (date/time combinations)
         model.S = Set(initialize=list(self.S))  # Stadiums
         model.I = Set(initialize=list(self.I))  # Teams
         model.G = Set(initialize=list(self.G))  # Groups

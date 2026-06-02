@@ -111,11 +111,13 @@ class TwoStepOptimizer:
             Tuple of (updated_schedule, updated_base_camp_assignment)
         """
         # Step A: Optimize schedule
+        print(f"\n---- Step A: Optimize Schedule ---")
         step_a_result = self.run_step_a(base_camp_assignment, time_limit=step_a_time_limit)
         new_schedule = step_a_result["schedule"]
         objective_a = step_a_result["objective_full"]
 
         # Step B: Optimize base camps
+        print(f"\n---- Step B: Optimize Base Camps ---")
         new_base_camp = self.run_step_b(new_schedule)
         
         # Record iteration history
@@ -153,6 +155,7 @@ class TwoStepOptimizer:
         base_camp_assignment = self.get_initial_base_camp_assignment()
         # Main loop
         for iteration_num in range(max_iterations):
+                print(f"\n=== Iteration {iteration_num + 1} ===")
                 schedule, base_camp_assignment = self.run_iteration(
                 iteration_num,
                 base_camp_assignment)
