@@ -362,7 +362,6 @@ class KPICalculator:
         return vlb
 
 
-#############################################################
     def _kpi_4_2_fan_accessibility(self, schedule: Dict) -> float:
         """
         KPI 4.2: Fan Accessibility and Same-City Overlap.

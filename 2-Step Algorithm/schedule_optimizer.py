@@ -2,7 +2,8 @@
 Schedule optimization solver (Step A) for FIFA 2026 Group-Stage.
 Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPIs.
 """
-
+from datetime import datetime, timedelta
+import pandas as pd
 from typing import Dict
 from pyomo.environ import (
     ConcreteModel,
@@ -15,6 +16,8 @@ from pyomo.environ import (
     Binary,
     SolverFactory,
     value,
+    NonNegativeReals,
+    NonNegativeIntegers,
 )
 
 
@@ -25,7 +28,6 @@ class ScheduleOptimizer:
         self.loader = data_loader
         self.kpi_calc = kpi_calculator
         self.base_camp_assignment = base_camp_assignment
-        self.config_params = data_loader.config_params
 
         self.matches = data_loader.get_matches()
         self.venues = data_loader.get_venues()
@@ -40,7 +42,6 @@ class ScheduleOptimizer:
             self.G,
             self.M_i,
             self.M_g,
-            self.T_r,
             self.S_c,
         ) = data_loader.get_sets_and_indices()
 
@@ -48,77 +49,134 @@ class ScheduleOptimizer:
         self.model = None
         
         # Extract unique (date, time) slots from matches
-        self.date_time_slots = self._extract_date_time_slots()
+        self.date_time_slots = self.T
         self.slot_index_to_datetime = {i: slot for i, slot in enumerate(self.date_time_slots)}
         self.datetime_to_slot_index = {slot: i for i, slot in enumerate(self.date_time_slots)}
-
-    def _extract_date_time_slots(self) -> list:
-        """
-        Extract unique (date, kickoff_local) combinations from matches.
-        Returns sorted list of tuples: [(date_str, time_str), ...]
-        """
-        slots = set()
-        dates = set()
-        times = set()
-        for _, match in self.matches.iterrows():
-            date = match["date"]
-            time = match["kickoff_local"]
-            dates.add(str(date))
-            times.add(str(time))
-        for date in sorted(dates):
-            for time in sorted(times):
-                slots.add((date, time))
-        return sorted(list(slots))
 
     def _compute_kpi_coefficients(self) -> Dict:
         """
         Precompute KPI contributions for each (match, time_slot, stadium) combination.
         Returns dict mapping (m, t, s) -> weighted_kpi_cost
         t is an index into date_time_slots.
+        
+        Each coefficient represents the marginal cost of assigning x[m,t,s]=1.
         """
         kpi_costs = {}
+        weights = self.params.get("weights", {})
         
         for m in self.M:
             match_row = self.matches[self.matches["match_id"] == m]
-            if len(match_row) == 0:
-                continue
             match = match_row.iloc[0]
             
-            for t_idx, (date, time) in enumerate(self.date_time_slots):
+            team_a_id = match["team_a_id"]
+            team_b_id = match["team_b_id"]
+            match_group = match["group"]
+            
+            for t_idx, (date, time_str) in enumerate(self.date_time_slots):
                 for s in self.S:
                     cost = 0.0
                     
-                    # KPI 1.2: Travel distance (weight 0.10)
-                    for team_id in [match["team_a_id"], match["team_b_id"]]:
-                        if team_id in self.base_camp_assignment:
-                            base_camp_id = self.base_camp_assignment[team_id]
-                            dist = self.params["dist"].get((base_camp_id, s), 0)
-                            cost += self.config_params.KPI_WEIGHTS["kpi_1_2"] * dist / 100  # Normalize distance
+                    # KPI 1.2: Intra-group travel dispersion
+                    # TD_i = 2 * Σ dist(base_camp_i, stadium)
+                    bc_a = self.base_camp_assignment[team_a_id]
+                    dist_a = self.params.get("dist", {}).get((bc_a, s), 0.0)
+                    cost += 2.0 * dist_a * weights.get("kpi_1_2", 0.0)
                     
-                    # KPI 1.4: Jet lag - time zone difference (weight 0.08)
-                    for team_id in [match["team_a_id"], match["team_b_id"]]:
-                        if team_id in self.base_camp_assignment:
-                            base_camp_id = self.base_camp_assignment[team_id]
-                            stadium_tz = self.params["tzone_stadium"].get(s, 0)
-                            camp_tz = self.params["tzone_basecamp"].get(base_camp_id, 0)
-                            tz_diff = abs(stadium_tz - camp_tz)
-                            cost += self.config_params.KPI_WEIGHTS["kpi_1_4"] * tz_diff
+                    bc_b = self.base_camp_assignment[team_b_id]
+                    dist_b = self.params.get("dist", {}).get((bc_b, s), 0.0)
+                    cost += 2.0 * dist_b * weights.get("kpi_1_2", 0.0)
                     
-                    # KPI 2.4: Weather WBGT penalty (weight 0.10)
-                    venue_weather = self.params["weather"][
-                        self.params["weather"]["venue_id"] == s
-                    ]
-                    if len(venue_weather) > 0:
-                        avg_temp = venue_weather["temperature_c"].mean()
-                        weather_penalty = max(0, avg_temp - 20)
-                        cost += self.config_params.KPI_WEIGHTS["kpi_2_4"] * weather_penalty / 10  # Normalize
+                    # KPI 1.3: Circadian shift cost
+                    # φ(τ_hat) = perceived night penalty for each team
+                    try:
+                        kickoff_hour = float(time_str.split(":")[0])
+                    except:
+                        kickoff_hour = 12.0
                     
-                    # KPI 4.1: Broadcast value (weight 0.10) - prefer high match value in good slots
-                    match_value = self.params["match_value"].get(m, 0.5)
-                    broadcast_quality = self.params["broadcast_quality"].get(t_idx, 0.5)
-                    cost -= self.config_params.KPI_WEIGHTS["kpi_4_1"] * match_value * broadcast_quality  # Negative because we want to maximize
+                    for team_id in [team_a_id, team_b_id]:
+                        bc_id = self.base_camp_assignment[team_id]
+                        camp_tz = self.params.get("tzone_basecamp", {}).get(bc_id, 0)
+                        stadium_tz = self.params.get("tzone_stadium", {}).get(s, 0)
+                        tz_offset = stadium_tz - camp_tz
+                        
+                        # Perceived kickoff time (mod 24)
+                        tau_hat = (kickoff_hour - tz_offset) % 24
+                        
+                        # Circadian penalty function φ(τ_hat)
+                        tau_lo = 23.0  # Start of subjective night
+                        tau_hi = 7.0   # End of subjective night
+                        max_penalty = 8.0
+                        
+                        if tau_hat >= tau_lo or tau_hat <= tau_hi:
+                            if tau_hat >= tau_lo:
+                                penalty = min(tau_hat - tau_lo, 24 - (tau_hat - tau_lo))
+                            else:
+                                penalty = min(tau_hat + 24 - tau_lo, 24 - (tau_hat + 24 - tau_lo))
+                            penalty = min(penalty, max_penalty)
+                        else:
+                            penalty = 0.0
+                        
+                        cost += penalty * weights["kpi_1_3"]
                     
-                    kpi_costs[(m, t_idx, s)] = cost
+                    # KPI 1.4: Match-venue geographic dispersion
+                    # Count unique clusters/countries visited by each team
+                    for team_id in [team_a_id, team_b_id]:
+                        bc_id = self.base_camp_assignment[team_id]
+                        bc_country = self.base_camps[self.base_camps["base_camp_id"] == bc_id]["country"].values
+                        stadium_country = self.venues[self.venues["venue_id"] == s]["country"].values
+                        
+                        if len(bc_country) > 0 and len(stadium_country) > 0:
+                            # Cost increases if crossing country border
+                            if bc_country[0] != stadium_country[0]:
+                                cost += weights["kpi_1_4"]
+                    
+                    # KPI 1.7: Entry and visa restriction exposure
+                    # Penalty if match at US stadium and team has visa issues
+                    us_stadiums = self.venues[self.venues["country"] == "USA"]["venue_id"].tolist()
+                    if s in us_stadiums:
+                        ban_teams = set(self.params.get("us_visa_ban_teams", []))
+                        bond_teams = set(self.params.get("us_visa_bond_teams", []))
+                        
+                        for team_id in [team_a_id, team_b_id]:
+                            if team_id in ban_teams:
+                                cost += 1.0 * weights["kpi_1_7"]
+                            elif team_id in bond_teams:
+                                cost += 0.5 * weights["kpi_1_7"]
+                    
+                    # KPI 2.2: Per-team heat load
+                    # Excess WBGT: h_mt = max(0, WBGT - 28)
+                    venue_weather = self.params.get("weather", {})
+                    if isinstance(venue_weather, dict):
+                        temp_c = venue_weather.get(s, {}).get("temperature_c", 20.0)
+                    else:
+                        temp_c = 20.0
+                    
+                    wbgt_estimated = 0.5 * temp_c + 14.0
+                    excess_wbgt = max(0.0, wbgt_estimated - 28.0)
+                    cost += excess_wbgt * 2.0 * weights["kpi_2_2"]  # Factor of 2 for two teams
+
+                    # KPI 1.6: Rest asymmetry between opponents
+                    # This requires knowing relative match timing, use heuristic coefficient
+                    
+                    # KPI 3.3: Round-order balance (first-mover)
+                    # Heuristic: penalize afternoon/evening slots for balance
+
+                    
+                    # KPI 4.1: Venue-load balance
+                    # Penalize underutilized stadiums (encourage spread)
+
+                    
+                    # KPI 4.2: Same-city overlap
+                    # Penalize multiple matches in same city on same date (address operationally)
+                    
+                    # KPI 5.2: Marquee-match slot quality
+                    # Bonus for high-profile matches in primetime slots
+                    
+                    # KPI 5.3: Host-city economic equity
+                    # Distribute commercial value across venues
+
+                
+
         
         return kpi_costs
 
@@ -128,7 +186,7 @@ class ScheduleOptimizer:
 
         # Sets
         model.M = Set(initialize=list(self.M))  # Matches
-        model.T = Set(initialize=list(range(len(self.date_time_slots))))  # Time slots (date/time combinations)
+        model.T = Set(initialize=list(self.T))  # Time slots (date/time combinations)
         model.S = Set(initialize=list(self.S))  # Stadiums
         model.I = Set(initialize=list(self.I))  # Teams
         model.G = Set(initialize=list(self.G))  # Groups
@@ -136,6 +194,16 @@ class ScheduleOptimizer:
         # Decision Variables
         model.x = Var(model.M, model.T, model.S, within=Binary)  # Assignment vars
         model.y = Var(model.G, model.T, within=Binary)  # Final slot indicator
+
+        # Auxiliary variables for KPIs (used in constraints)
+        model.delta_m = Var(model.M, within=NonNegativeReals)  # KPI 1.6: Rest asymmetry per match
+        model.e_i = Var(model.I, within=NonNegativeReals)  # KPI 3.3: First-mover balance per team
+        model.d_s = Var(model.S, within=NonNegativeReals)  # KPI 4.1: Venue load deviation
+        model.o_ct = Var(model.G, model.T, within=NonNegativeReals)  # KPI 4.2: Same-city overlap
+        model.o_P_mm_prime = Var(model.M, model.M, model.T, within=NonNegativeReals)  # KPI 5.2: Marquee match overlap
+        model.p_s = Var(model.S, within=NonNegativeReals)  # KPI 5.3: Host-city economic equity deviation
+        model.venue_count = Var(model.S, within=NonNegativeIntegers)  # Number of matches per venue
+        model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # Rest days for team i before match m
 
         # Parameters
         model.N_c = Param(
@@ -149,19 +217,184 @@ class ScheduleOptimizer:
             model.T,
             model.S,
             initialize={(m, t, s): kpi_coefficients.get((m, t, s), 0.0)
-                        for m in self.M for t in range(len(self.date_time_slots)) for s in self.S},
+                        for m in self.M for t in self.T for s in self.S},
         )
 
         # Objective: Minimize full weighted KPI (all 13 KPIs)
+        # Direct KPIs (1.2, 1.3, 1.4, 1.7, 2.2) via precomputed coefficients
+        # + Auxiliary variable KPIs (1.6, 3.3, 4.1, 4.2, 5.2, 5.3)
         def objective_rule(model):
-            return sum(
+            weights = self.params.get("weights", {})
+            
+            # Direct coefficient-based KPIs
+            direct_cost = sum(
                 model.kpi_cost[m, t, s] * model.x[m, t, s]
                 for m in model.M
                 for t in model.T
                 for s in model.S
             )
+            
+            # KPI 1.6: Rest asymmetry (sum of rest differences)
+            kpi_1_6 = sum(model.delta_m[m] for m in model.M)
+            
+            # KPI 3.3: First-mover balance (sum of deviations)
+            kpi_3_3 = sum(model.e_i[i] for i in model.I)
+            
+            # KPI 4.1: Venue-load balance (mean absolute deviation of match counts)
+            kpi_4_1 = sum(model.d_s[s] for s in model.S)
+            
+            # KPI 4.2: Same-city overlap (count of overlaps)
+            kpi_4_2 = sum(model.o_ct[g, t] for g in model.G for t in model.T)
+            
+            # KPI 5.2: Marquee-match slot quality (negative for maximization)
+            kpi_5_2 = sum(model.o_P_mm_prime[m1, m2, t] for m1 in model.M for m2 in model.M for t in model.T)
+            
+            # KPI 5.3: Host-city economic equity (mean absolute deviation of venue commercial value)
+            kpi_5_3 = sum(model.p_s[s] for s in model.S)
+            
+            return (direct_cost +
+                    weights.get("kpi_1_6", 0.0) * kpi_1_6 +
+                    weights.get("kpi_3_3", 0.0) * kpi_3_3 +
+                    weights.get("kpi_4_1", 0.0) * kpi_4_1 +
+                    weights.get("kpi_4_2", 0.0) * kpi_4_2 +
+                    weights.get("kpi_5_2", 0.0) * kpi_5_2 +
+                    weights.get("kpi_5_3", 0.0) * kpi_5_3)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
+
+        # Constraints for Auxiliary KPI Variables
+
+        # KPI 1.6: Rest Asymmetry Between Opponents
+        # delta_m >= |r_im[team_a, m] - r_im[team_b, m]|
+        # Constraints: delta_m >= r_im[a] - r_im[b] and delta_m >= r_im[b] - r_im[a]
+        def rest_asymmetry_constraint_1(model, m):
+            match_row = self.matches[self.matches["match_id"] == m]
+            if len(match_row) == 0:
+                return Constraint.Skip
+            match = match_row.iloc[0]
+            team_a = match["team_a_id"]
+            team_b = match["team_b_id"]
+            return model.delta_m[m] >= model.r_im[team_a, m] - model.r_im[team_b, m]
+
+        def rest_asymmetry_constraint_2(model, m):
+            match_row = self.matches[self.matches["match_id"] == m]
+            if len(match_row) == 0:
+                return Constraint.Skip
+            match = match_row.iloc[0]
+            team_a = match["team_a_id"]
+            team_b = match["team_b_id"]
+            return model.delta_m[m] >= model.r_im[team_b, m] - model.r_im[team_a, m]
+
+        model.h_kpi_1_6_a = Constraint(model.M, rule=rest_asymmetry_constraint_1)
+        model.h_kpi_1_6_b = Constraint(model.M, rule=rest_asymmetry_constraint_2)
+
+        # KPI 3.3: First-Mover Balance
+        # e_i >= a_i - 1 and e_i >= 1 - a_i (where a_i is count of early kickoffs)
+        # Simplified: penalize deviation from equal distribution across teams
+        def first_mover_constraint_1(model, i):
+            team_matches = list(self.M_i.get(i, []))
+            if len(team_matches) == 0:
+                return Constraint.Skip
+            # Count early matches for this team (kickoff before 15:00)
+            early_count = sum(
+                model.x[m, t, s] 
+                for m in team_matches 
+                for t in model.T 
+                for s in model.S
+                if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
+            )
+            return model.e_i[i] >= early_count - 1
+
+        def first_mover_constraint_2(model, i):
+            team_matches = list(self.M_i.get(i, []))
+            if len(team_matches) == 0:
+                return Constraint.Skip
+            early_count = sum(
+                model.x[m, t, s]
+                for m in team_matches
+                for t in model.T
+                for s in model.S
+                if t < len(self.date_time_slots) and float(self.date_time_slots[t][1].split(":")[0]) < 15.0
+            )
+            return model.e_i[i] >= 1 - early_count
+
+        model.h_kpi_3_3_a = Constraint(model.I, rule=first_mover_constraint_1)
+        model.h_kpi_3_3_b = Constraint(model.I, rule=first_mover_constraint_2)
+
+        # KPI 4.1: Venue-Load Balance
+        # venue_count[s] = sum of matches at stadium s
+        # d_s >= venue_count[s] - mean_count and d_s >= mean_count - venue_count[s]
+        def venue_count_constraint(model, s):
+            return model.venue_count[s] == sum(model.x[m, t, s] for m in model.M for t in model.T)
+
+        mean_venue_count = len(self.M) / len(self.S) if len(self.S) > 0 else 1
+        
+        def venue_load_deviation_1(model, s):
+            return model.d_s[s] >= model.venue_count[s] - mean_venue_count
+
+        def venue_load_deviation_2(model, s):
+            return model.d_s[s] >= mean_venue_count - model.venue_count[s]
+
+        model.h_kpi_4_1_count = Constraint(model.S, rule=venue_count_constraint)
+        model.h_kpi_4_1_dev_1 = Constraint(model.S, rule=venue_load_deviation_1)
+        model.h_kpi_4_1_dev_2 = Constraint(model.S, rule=venue_load_deviation_2)
+
+        # KPI 4.2: Same-City Overlap
+        # o_ct[c, t] >= count of matches in city c at slot t minus 1 (or 0)
+        # Precompute city mappings
+        city_stadiums = {}  # city -> list of stadiums in that city
+        for _, venue in self.venues.iterrows():
+            city = venue.get("city", "Unknown")
+            stadium_id = venue["venue_id"]
+            if city not in city_stadiums:
+                city_stadiums[city] = []
+            city_stadiums[city].append(stadium_id)
+        
+        def same_city_overlap_constraint(model, g, t):
+            # For each city and time slot, count simultaneous matches
+            overlap_penalty = 0
+            for city, stadiums in city_stadiums.items():
+                city_match_count = sum(
+                    model.x[m, t, s]
+                    for m in model.M
+                    for s in stadiums
+                )
+                # Penalty: any overlap (more than 1 match) gets added
+                overlap_penalty += max(0, city_match_count - 1)
+            
+            return model.o_ct[g, t] >= overlap_penalty
+
+        model.h_kpi_4_2 = Constraint(model.G, model.T, rule=same_city_overlap_constraint)
+
+        # KPI 5.2: Marquee-Match Slot Quality with Overlap Penalty
+        # o_P_mm_prime[m, m', t] >= x[m,t,s1] + x[m',t,s2] - 1 (overlap if both in same slot)
+        def marquee_overlap_constraint(model, m1, m2, t):
+            if m1 >= m2:
+                return Constraint.Skip
+            # Penalty for two high-profile matches sharing a slot
+            mu_m1 = self.params.get("match_value", {}).get(m1, 0.5)
+            mu_m2 = self.params.get("match_value", {}).get(m2, 0.5)
+            # Only penalize if both are popular
+            if mu_m1 >= 0.7 and mu_m2 >= 0.7:
+                return model.o_P_mm_prime[m1, m2, t] >= (
+                    sum(model.x[m1, t, s] for s in model.S) +
+                    sum(model.x[m2, t, s] for s in model.S) - 1
+                )
+            return Constraint.Skip
+
+        model.h_kpi_5_2 = Constraint(model.M, model.M, model.T, rule=marquee_overlap_constraint)
+
+        # KPI 5.3: Host-City Economic Equity
+        # p_s >= |venue_commercial_value[s] - mean_vc| 
+        # Simplified: penalize venue load imbalance (similar to 4.1)
+        def economic_equity_constraint_1(model, s):
+            return model.p_s[s] >= model.venue_count[s] - mean_venue_count
+
+        def economic_equity_constraint_2(model, s):
+            return model.p_s[s] >= mean_venue_count - model.venue_count[s]
+
+        model.h_kpi_5_3_dev_1 = Constraint(model.S, rule=economic_equity_constraint_1)
+        model.h_kpi_5_3_dev_2 = Constraint(model.S, rule=economic_equity_constraint_2)
 
         # Constraints
 
@@ -181,11 +414,84 @@ class ScheduleOptimizer:
                     for t in model.T
                     for s in model.S
                 )
-                == self.loader.config_params.MATCHES_PER_TEAM
+                == 3
             )
 
         model.h2 = Constraint(model.I, rule=h2_rule, doc="H2: Round-robin")
 
+        # H4: stadium turnover
+        def h4_rule(model, s, t):
+            time_window = self.params["delta_min"] + self.params["match_duration"] 
+            date_str, time_str = self.slot_index_to_datetime[t]
+
+            dt = datetime.strptime(
+                f"{date_str} {time_str}",
+                "%Y-%m-%d %H:%M"
+            )
+            dt_later = dt + timedelta(hours=time_window)
+
+            new_date = dt_later.strftime("%Y-%m-%d")
+            new_time = dt_later.strftime("%H:%M")
+
+            # Find all time slots that fall within the window
+            relevant_slots = [
+                t_prime for t_prime, dt_prime in self.slot_index_to_datetime.items()
+                if dt_prime[0] <= new_date and dt_prime[1] <= new_time and dt_prime[0] > date_str and dt_prime[1] > time_str
+            ]
+            
+            return sum(model.x[m, t_prime, s] for m in model.M for t_prime in relevant_slots) <= 1
+        
+        model.h4 = Constraint(model.S, model.T, rule=h4_rule, doc="H4: Stadium turnover")
+
+
+        # H5: minimum team rest
+        def h5_rule(model, i, m1, m2, t1, t2):
+            if m1 >= m2:
+                return Constraint.Skip  # Avoid double counting pairs
+
+            team_matches = list(self.M_i.get(i, []))
+            if m1 not in team_matches or m2 not in team_matches:
+                return Constraint.Skip  # Only consider matches involving team i
+
+            time_window = self.params["R_min"] + self.params["match_duration"]
+            date_str_1, time_str_1 = self.slot_index_to_datetime[t1]
+            date_str_2, time_str_2 = self.slot_index_to_datetime[t2]
+
+            dt1 = datetime.strptime(f"{date_str_1} {time_str_1}", "%Y-%m-%d %H:%M")
+            dt2 = datetime.strptime(f"{date_str_2} {time_str_2}", "%Y-%m-%d %H:%M")
+
+            time_diff_hours = abs((dt2 - dt1).total_seconds()) / 3600.0
+
+            if time_diff_hours < time_window:
+                return (
+                    sum(model.x[m1, t1, s] for s in model.S) +
+                    sum(model.x[m2, t2, s] for s in model.S)
+                    <= 1
+                )
+            else:
+                return Constraint.Skip  # No constraint needed if time difference is sufficient
+            
+        model.h5 = Constraint(model.I, model.M, model.M, model.T, model.T, rule=h5_rule, doc="H5: Minimum team rest")
+
+        # H6: host-nation matches in their country
+        def h6_rule(model, m, t, s):
+            match_row = self.matches[self.matches["match_id"] == m]
+            match = match_row.iloc[0]
+
+            team_a_id = match["team_a_id"]
+            team_b_id = match["team_b_id"]
+
+            team_a_country = self.teams[self.teams["team_id"] == team_a_id]["country"].values[0]
+            team_b_country = self.teams[self.teams["team_id"] == team_b_id]["country"].values[0]
+
+            stadium_country = self.venues[self.venues["venue_id"] == s]["country"].values[0]
+
+            if (team_a_country in ["USA", "MEX", "CAN"] and team_a_country != stadium_country) or (team_b_country in ["USA", "MEX", "CAN"] and team_b_country != stadium_country):
+                return model.x[m, t, s] == 0    
+            
+            return Constraint.Skip  # No constraint needed if no host nation involved
+    
+        model.h6 = Constraint(model.M, model.T, model.S, rule=h6_rule, doc="H6: Host nation matches")
        
         # H7: Simultaneous final matches
         def h7a_rule(model, g):
@@ -202,6 +508,23 @@ class ScheduleOptimizer:
 
         model.h7b = Constraint(
             model.G, model.T, rule=h7b_rule, doc="H7b: Final matches in slot"
+        )
+
+        def h7c_rule(model, g, t):
+            group_matches = list(self.M_g.get(g, []))
+            date_str, time_str = self.slot_index_to_datetime[t]
+
+            later_slots = [
+                t_prime for t_prime, dt_prime in self.slot_index_to_datetime.items()
+                if dt_prime[0] > date_str or (dt_prime[0] == date_str and dt_prime[1] > time_str)
+            ]
+
+            return (
+                sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in later_slots)
+                <= 2 * (1 - model.y[g, t])
+            )
+        model.h7c = Constraint(
+            model.G, model.T, rule=h7c_rule, doc="H7c: Final matches not after final slot"
         )
 
         # H8: Match allocation by country
@@ -231,11 +554,9 @@ class ScheduleOptimizer:
     def solve(self, time_limit: int = 300, solver_name: str = "glpk") -> Dict:
         """
         Solve the schedule optimization problem.
-
         Args:
             time_limit: Maximum solver time in seconds
             solver_name: Solver to use (glpk, cbc, gurobi, ipopt, etc.)
-
         Returns:
             Dictionary with solution details
         """
@@ -257,12 +578,6 @@ class ScheduleOptimizer:
                     break
             except:
                 continue
-        
-        if solver is None or used_solver is None:
-            raise RuntimeError(
-                "No linear/integer programming solver available. "
-                "Please install CBC, GLPK, or Gurobi."
-            )
 
         # Configure solver options
         if used_solver == "cbc":
@@ -276,12 +591,11 @@ class ScheduleOptimizer:
 
         # Extract solution
         schedule = {}
-        if result.solver.status.value == "ok":
-            for m in self.model.M:
-                for t in self.model.T:
-                    for s in self.model.S:
-                        if value(self.model.x[m, t, s]) > 0.5:
-                            schedule[int(m)] = (int(t), s)
+        for m in self.model.M:
+            for t in self.model.T:
+                for s in self.model.S:
+                    if value(self.model.x[m, t, s]) > 0.5:
+                        schedule[int(m)] = (int(t), s)
 
         return {
             "status": str(result.solver.status),
@@ -290,48 +604,3 @@ class ScheduleOptimizer:
             "model": self.model,
             "solver": used_solver,
         }
-
-    def get_schedule_dict(self) -> Dict:
-        """Extract schedule from solved model as dict mapping match_id -> (time_slot, stadium)."""
-        schedule = {}
-        if self.model is not None:
-            for m in self.model.M:
-                for t in self.model.T:
-                    for s in self.model.S:
-                        if value(self.model.x[m, t, s]) > 0.5:
-                            schedule[int(m)] = (int(t), s)
-        return schedule
-
-
-if __name__ == "__main__":
-    from data_loader import DataLoader
-    from kpis import KPICalculator
-
-    loader = DataLoader()
-    data = loader.load_all()
-    params = loader.get_parameters()
-
-    # Dummy base camp assignment
-    base_camp_assignment = {
-        "BRA": 1,
-        "GER": 2,
-        "ARG": 3,
-        "FRA": 4,
-        "ENG": 5,
-    }
-
-    kpi_calc = KPICalculator(loader, params)
-    optimizer = ScheduleOptimizer(loader, kpi_calc, base_camp_assignment)
-
-    print("Building MILP model for schedule optimization...")
-    optimizer.build_model()
-    print("✓ Model built")
-
-    print("Attempting to solve (requires GLPK/Gurobi/CBC)...")
-    try:
-        result = optimizer.solve(time_limit=10, solver_name="glpk")
-        print(f"✓ Solver status: {result['status']}")
-        print(f"  Objective value: {result['objective']}")
-        print(f"  Matches scheduled: {len(result['schedule'])}")
-    except Exception as e:
-        print(f"⚠ Solver error (expected if no solver installed): {e}")

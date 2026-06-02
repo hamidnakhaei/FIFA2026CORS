@@ -23,8 +23,7 @@ minimax objective.
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, Tuple, List
+from typing import Dict, List
 from copy import deepcopy
 
 
@@ -42,6 +41,18 @@ class BaseCampOptimizer:
         self.base_camps = data_loader.get_base_camps()
         self.params = data_loader.get_parameters()
 
+        # Get sets and indices
+        (
+            self.M,
+            self.T,
+            self.S,
+            self.I,
+            self.G,
+            self.M_i,
+            self.M_g,
+            self.S_c,
+        ) = data_loader.get_sets_and_indices()
+
         # US entry / visa sets (KPI 1.7)
         self.ban_teams = set(self.params.get("us_visa_ban_teams", []))
         self.bond_teams = set(self.params.get("us_visa_bond_teams", []))
@@ -50,7 +61,7 @@ class BaseCampOptimizer:
         # Pre-compute the stadium each match is played in (schedule is fixed)
         #   schedule: match_id -> (slot, stadium_id)
         self.match_stadium = {
-            int(m): stadium_id for m, (slot, stadium_id) in self.schedule.items()
+            str(m): stadium_id for m, (slot, stadium_id) in self.schedule.items()
         }
 
         # team_id -> list of its match_ids (each team plays 3)
@@ -65,9 +76,9 @@ class BaseCampOptimizer:
     # ------------------------------------------------------------------ #
     def _build_team_matches(self) -> Dict:
         """Map each team to the match_ids it plays (from the KPI matches table)."""
-        matches = self.kpi_calc.matches
+        matches = self.M
         team_matches = {}
-        for team_id in self.teams["team_id"].unique():
+        for team_id in self.I:
             mids = matches[
                 (matches["team_a_id"] == team_id)
                 | (matches["team_b_id"] == team_id)
@@ -80,7 +91,7 @@ class BaseCampOptimizer:
         bc = self.base_camps
         if "country" in bc.columns:
             return set(
-                bc[bc["country"].astype(str).str.upper().isin(["USA", "US", "UNITED STATES"])][
+                bc[bc["country"].astype(str).str.upper().isin(["USA"])][
                     "base_camp_id"
                 ].tolist()
             )
@@ -123,15 +134,10 @@ class BaseCampOptimizer:
             return 0.0
         return float(max(td.values()))
 
-    # Backward-compatible alias (older code referenced compute_org_objective).
-    def compute_org_objective(self, base_camp_assignment: Dict) -> float:
-        return self.compute_max_travel(base_camp_assignment)
-
     # ------------------------------------------------------------------ #
     #  Exact minimax MILP (Pyomo)
     # ------------------------------------------------------------------ #
-    def solve_minimax(self, time_limit: int = 120, solver_name: str = "gurobi",
-                      lexicographic: bool = True) -> Dict:
+    def optimize(self, time_limit: int = 120, solver_name: str = "gurobi") -> Dict:
         """
         Solve the minimax-travel base-camp assignment as a MILP.
 
@@ -147,7 +153,7 @@ class BaseCampOptimizer:
             print(f"  ⚠ Pyomo unavailable ({e}); using greedy minimax fallback.")
             return self._greedy_minimax()
 
-        teams = list(self.team_matches.keys())
+        teams = list(self.I)
 
         # Penalized travel coefficients ctilde[i,b] over eligible facilities only.
         ctilde = {}
@@ -180,7 +186,7 @@ class BaseCampOptimizer:
         # (29) minimize the worst-case travel
         model.obj = Objective(expr=model.D, sense=minimize)
 
-        # Solve (try requested solver, then common fallbacks)
+        # Solve 
         solver, used = None, None
         for cand in [solver_name, "gurobi", "cbc", "glpk"]:
             try:
@@ -210,120 +216,12 @@ class BaseCampOptimizer:
                 assignment[i] = b
         best_cost = float(value(model.D))
 
-        # Optional lexicographic tie-break: fix D = D*, minimize total travel,
-        # so non-binding teams get the efficient (shortest-travel) camp.
-        if lexicographic and assignment:
-            try:
-                model.Dfix = Constraint(expr=model.D <= best_cost + 1e-6)
-                model.obj.deactivate()
-                model.obj2 = Objective(
-                    expr=sum(ctilde[(i, b)] * model.u[i, b] for (i, b) in ib_pairs),
-                    sense=minimize,
-                )
-                solver.solve(model, tee=False)
-                assignment = {
-                    i: b for (i, b) in ib_pairs
-                    if value(model.u[i, b]) is not None and value(model.u[i, b]) > 0.5
-                }
-                best_cost = self.compute_max_travel(assignment)
-            except Exception as e:
-                print(f"  ⚠ Lexicographic refinement skipped ({e}).")
-
         return {
-            "best_assignment": assignment,
-            "best_cost": best_cost,
+            "assignment": assignment,
+            "cost": best_cost,
             "status": str(result.solver.status),
             "solver": used,
         }
-
-    # ------------------------------------------------------------------ #
-    #  Greedy fallback (optimal for minimax when teams are uncoupled)
-    # ------------------------------------------------------------------ #
-    def _greedy_minimax(self) -> Dict:
-        """Each team independently picks its minimum feasible penalized-travel
-        camp. Because teams couple only through the shared bound D, the resulting
-        max-travel equals the minimax optimum."""
-        assignment = {}
-        for i in self.team_matches.keys():
-            elig = self._eligible_facilities(i)
-            if not elig:
-                continue
-            best_b = min(elig, key=lambda b: self._penalized_travel(i, b))
-            assignment[i] = best_b
-        return {
-            "best_assignment": assignment,
-            "best_cost": self.compute_max_travel(assignment),
-            "status": "greedy",
-            "solver": "greedy",
-        }
-
-    # ------------------------------------------------------------------ #
-    #  Public entry point (keeps main.py's call signature & return keys)
-    # ------------------------------------------------------------------ #
-    def optimize(
-        self,
-        initial_assignment: Dict,
-        max_iterations: int = 10,                 # accepted for compatibility
-        temperature_schedule: str = "exponential",  # (unused: Step B is now exact)
-        num_changes_per_iteration: int = 5,       # (unused)
-        time_limit: int = 120,
-        solver_name: str = "gurobi",
-    ) -> Dict:
-        """
-        Optimize base camps by minimizing the maximum per-team travel distance.
-
-        The minimax problem is solved exactly (single MILP); the simulated-
-        annealing arguments are accepted for backward compatibility but no longer
-        drive the search. Returns the same keys main.py expects.
-        """
-        result = self.solve_minimax(time_limit=time_limit, solver_name=solver_name)
-
-        best_assignment = result["best_assignment"]
-        best_cost = result["best_cost"]
-
-        # Report the improvement over the starting (e.g. current) assignment.
-        init_cost = (
-            self.compute_max_travel(initial_assignment)
-            if initial_assignment else float("inf")
-        )
-        improved = best_cost <= init_cost
-
-        team_travel = self.compute_team_travel(best_assignment)
-        print(
-            f"  ✓ Minimax travel solved ({result['status']}): "
-            f"max={best_cost:.2f} km (was {init_cost:.2f} km), "
-            f"mean={np.mean(list(team_travel.values())):.2f} km"
-        )
-
-        return {
-            "best_assignment": best_assignment,
-            "best_cost": best_cost,            # = minimax (max per-team travel)
-            "final_assignment": best_assignment,
-            "final_cost": best_cost,
-            "team_travel": team_travel,
-            "max_travel": best_cost,
-            "improved_over_initial": improved,
-            # SA-style fields kept so existing callers don't break:
-            "costs_history": [init_cost, best_cost],
-            "acceptance_rate": 1.0 if improved else 0.0,
-            "iterations": 1,
-            "status": result["status"],
-            "solver": result.get("solver"),
-        }
-
-
-def generate_initial_assignment(teams_df: pd.DataFrame) -> Dict:
-    """
-    Generate an initial base camp assignment (used only as a starting point /
-    baseline for the improvement report; the minimax solve does not depend on it).
-    Returns dict mapping team_id -> base_camp_id.
-    """
-    assignment = {}
-    for _, team in teams_df.iterrows():
-        team_id = team["team_id"]
-        base_camp_id = (hash(team_id) % 10) + 1
-        assignment[team_id] = base_camp_id
-    return assignment
 
 
 def load_base_camp_assignment_from_data(base_camps_df: pd.DataFrame) -> Dict:

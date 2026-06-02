@@ -17,7 +17,6 @@ class config_params:
             "kpi_3_3": 0.08,   # Round-Order Balance Index (First-Mover)
             "kpi_4_1": 0.10,   # Venue-Load Balance
             "kpi_4_2": 0.08,   # Fan Accessibility and Same-City Overlap
-            "kpi_5_1": 0.05,   # Prime-Time Alignment Score
             "kpi_5_2": 0.06,   # Marquee-Match Slot Quality and Overlap Penalty
             "kpi_5_3": 0.04,   # Host-City Economic Equity
         }
@@ -41,6 +40,7 @@ class config_params:
 
         # Time constants
         self.MIN_REST_HOURS = 72  # Minimum rest between matches (kickoff to kickoff)
+        self.MIN_MATCH_INTERVAL_HOURS = 5  # Minimum time between two matches at the same stadium for rest and logistics
         self.MATCH_DURATION_HOURS = 105 / 60  # Match duration in hours
 
         # Optimization parameters

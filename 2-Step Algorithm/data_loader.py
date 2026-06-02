@@ -112,9 +112,20 @@ class DataLoader:
         S = set(venues["venue_id"].unique())
         I = set(teams["team_id"].unique())
         G = set(teams["group"].unique())
-        T_t = set(matches["kickoff_local"].unique()) 
-        T_d = set(matches["date"].unique())
-        T = set((date, time) for date in T_d for time in T_t)  # Cartesian product
+
+        slots = set()
+        dates = set()
+        times = set()
+        for _, match in self.matches.iterrows():
+            date = match["date"]
+            time = match["kickoff_local"]
+            dates.add(str(date))
+            times.add(str(time))
+        for date in sorted(dates):
+            for time in sorted(times):
+                slots.add((date, time))
+
+        T = sorted(list(slots))
 
         # Map teams to their matches
         M_i = {}
@@ -202,6 +213,7 @@ class DataLoader:
             "broadcast_markets": broadcast,
             "N_c": self.config_params.COUNTRY_MATCH_ALLOCATION,
             "R_min": self.config_params.MIN_REST_HOURS,
+            "delta_min": self.config_params.MIN_MATCH_INTERVAL_HOURS,
             "match_duration": self.config_params.MATCH_DURATION_HOURS,
             "us_visa_ban_teams": self.config_params.US_VISA_BAN_TEAMS,
             "us_visa_bond_teams": self.config_params.US_VISA_BOND_TEAMS,
