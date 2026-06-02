@@ -267,7 +267,7 @@ class KPICalculator:
         For simplicity with available data: WBGT ≈ 0.5*T_db + 14
         """
         threshold = 28.0  # °C FIFPRO safety threshold
-        total_heat_load = 0.0
+        total_heat_load = {}
 
         for team_id in self.teams["team_id"].unique():
             team_heat_load = 0.0
@@ -280,7 +280,7 @@ class KPICalculator:
                 venue_weather = self.params["weather"][
                     self.params["weather"]["venue_id"] == stadium_id
                 ]
-
+###################################################################
                 if len(venue_weather) > 0:
                     T_db = venue_weather["temperature_c"].mean()
                     # WBGT estimate (from KPIs.tex section on simplified formulation)
@@ -288,44 +288,9 @@ class KPICalculator:
                     excess = max(0.0, wbgt_estimated - threshold)
                     team_heat_load += excess
 
-            total_heat_load += team_heat_load
+            total_heat_load[team_id] = team_heat_load
 
-        return total_heat_load
-
-    def _kpi_2_4_altitude_disruption(
-        self, schedule: Dict, base_camp_assignment: Dict
-    ) -> float:
-        """
-        KPI 2.4: Altitude Disruption Index.
-        Formula: ALT_i = Σ_k f(|elev(v_i,k) - elev(b_i)|)
-        Where f(Δe) = max(0, Δe - 500) / 1000, Δe in metres.
-        Minimize max_i ALT_i (minimax fairness).
-        """
-        max_alt = 0.0
-
-        for team_id in self.teams["team_id"].unique():
-            if team_id not in base_camp_assignment:
-                continue
-
-            base_camp_id = base_camp_assignment[team_id]
-            base_elev = self.params["elev_basecamp"].get(base_camp_id, 0)
-
-            team_alt = 0.0
-            for match_id, (slot, stadium_id) in schedule.items():
-                match = self.matches[self.matches["match_id"] == match_id].iloc[0]
-                if team_id not in [match["team_a_id"], match["team_b_id"]]:
-                    continue
-
-                venue_elev = self.params["elev_stadium"].get(stadium_id, 0)
-                delta_e = abs(venue_elev - base_elev)
-
-                # Penalty function: zero below 500m, linear above
-                penalty = max(0.0, delta_e - 500) / 1000.0
-                team_alt += penalty
-
-            max_alt = max(max_alt, team_alt)
-
-        return max_alt
+        return max(total_heat_load.values()) 
 
     def _kpi_3_3_first_mover_balance(self, schedule: Dict) -> float:
         """
@@ -334,6 +299,7 @@ class KPICalculator:
         Then FMB = σ({a_i : i ∈ T}) (standard deviation).
         Applies only to rounds 1-2; round 3 is simultaneous.
         """
+        fmb = []
         # Map matches to rounds
         groups = {}
         for _, match in self.matches.iterrows():
@@ -347,26 +313,34 @@ class KPICalculator:
         for team_id in self.teams["team_id"].unique():
             first_mover_scores[team_id] = 0
 
+        group_matches_sorted = {}
         # For each group, identify first/second match in rounds 1-2
         for group_id, group_matches in groups.items():
-            group_matches = sorted(group_matches)  # Assume first two are rounds 1-2
-            for round_idx, match_id in enumerate(group_matches[:2]):  # Only rounds 1-2
+            teams = set()
+            # sort based on 
+            for mid in group_matches:
+                slot, stadium_id = schedule[mid]
+                kickoff_date, kickoff_time = slot  # (date, time)
+                group_matches_sorted[mid] = (kickoff_date, kickoff_time)
+
+            # sort based on date and then time
+            group_matches_sorted = dict(sorted(group_matches_sorted.items(), key=lambda x: (x[1][0], x[1][1])))
+            for round_idx, match_id in enumerate(group_matches[:4]):
                 match = self.matches[self.matches["match_id"] == match_id].iloc[0]
                 team_a = match["team_a_id"]
                 team_b = match["team_b_id"]
+                teams.add(team_a)
+                teams.add(team_b)
 
-                # First match in round: one team gets advantage
-                if round_idx == 0:
-                    first_mover_scores[team_a] += 1  # Assume team_a plays first
+                first_mover_scores[team_a] += round_idx 
+                first_mover_scores[team_b] += round_idx 
+            
+            # Compute standard deviation (fairness metric)
+            scores = list([first_mover_scores[team] for team in teams])
+            if len(scores) > 1:
+                fmb.append(np.std(scores))
 
-        # Compute standard deviation (fairness metric)
-        scores = list(first_mover_scores.values())
-        if len(scores) > 1:
-            fmb = np.std(scores)
-        else:
-            fmb = 0.0
-
-        return fmb
+        return max(fmb) if fmb else 0.0
 
     def _kpi_4_1_venue_load_balance(self, schedule: Dict) -> float:
         """
@@ -387,6 +361,8 @@ class KPICalculator:
 
         return vlb
 
+
+#############################################################
     def _kpi_4_2_fan_accessibility(self, schedule: Dict) -> float:
         """
         KPI 4.2: Fan Accessibility and Same-City Overlap.
@@ -394,7 +370,6 @@ class KPICalculator:
         Count matches in same city on same date (operational issue).
         """
         same_city_overlap = 0
-        threshold_km = 500  # Fan accessibility threshold
 
         # Get city mappings
         venue_city = {}
@@ -419,28 +394,6 @@ class KPICalculator:
 
         return float(same_city_overlap)
 
-    def _kpi_5_1_prime_time_alignment(self, schedule: Dict) -> float:
-        """
-        KPI 5.1: Prime-Time Alignment Score.
-        Formula: PT = Σ_m Σ_r pop_r · w_r(s(m))
-        Where w_r(s) = indicator that slot s falls in prime-time for market r.
-        Prime-time window: 19:00–23:00 CET.
-        Maximize this (higher is better).
-        """
-        primetime_window = (19.0, 23.0)  # 19:00–23:00 CET
-        pt_score = 0.0
-
-        for match_id, (slot, stadium_id) in schedule.items():
-            if isinstance(slot, tuple):
-                _, kickoff_time = slot  # (date, time)
-                try:
-                    kickoff_hour = float(kickoff_time.split(":")[0])
-                    if primetime_window[0] <= kickoff_hour <= primetime_window[1]:
-                        pt_score += 1.0  # Full primetime score
-                except:
-                    pass
-
-        return -pt_score  # Negative because we minimize in objective (opposite of maximize)
 
     def _kpi_5_2_marquee_match_quality(self, schedule: Dict) -> float:
         """
@@ -498,23 +451,16 @@ class KPICalculator:
             if stadium_id not in venue_commercial:
                 venue_commercial[stadium_id] = 0.0
 
-            match = self.matches[self.matches["match_id"] == match_id].iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
+            mu_ij = self.params["match_value"].get(match_id, 0.5)
 
-            # Match strength score
-            elo_a = self.params["team_rating"].get(team_a, 50)
-            elo_b = self.params["team_rating"].get(team_b, 50)
-            mu_ij = (1.0 / elo_a + 1.0 / elo_b) / 2 if elo_a > 0 and elo_b > 0 else 0.5
-
-            # Slot quality
-            q_s = 0.5
+            # Slot quality (primetime bonus)
+            q_s = 0
             if isinstance(slot, tuple):
                 _, kickoff_time = slot
                 try:
                     kickoff_hour = float(kickoff_time.split(":")[0])
                     if 19.0 <= kickoff_hour <= 23.0:
-                        q_s = 1.0
+                        q_s = 1.0*self.params["popularity"].get(match_id, 1.0)  # Primetime bonus scaled by match popularity
                 except:
                     pass
 
@@ -524,41 +470,18 @@ class KPICalculator:
         values = list(venue_commercial.values())
         if len(values) > 1:
             gini = self._gini_coefficient(values)
-            hce = 1.0 - gini
         else:
-            hce = 1.0
+            gini = 0.0
 
-        return -hce  # Negative for minimization (opposite of maximize)
+        return -gini  # Negative for minimization (opposite of maximize)
 
     @staticmethod
     def _gini_coefficient(values):
         """Compute Gini coefficient of a list of values."""
-        sorted_vals = sorted(values)
-        n = len(sorted_vals)
-        if n == 0 or sum(sorted_vals) == 0:
+        vals = np.sort(np.asarray(values))
+        n = len(vals)
+        if n == 0 or vals.sum() == 0:
             return 0.0
-        cumsum = np.cumsum(sorted_vals)
-        return (2 * np.sum(cumsum * np.arange(1, n + 1))) / (n * np.sum(sorted_vals)) - (n + 1) / n
+        i = np.arange(1, n + 1)
+        return (2 * np.sum(i * vals)) / (n * vals.sum()) - (n + 1) / n
 
-
-if __name__ == "__main__":
-    from data_loader import DataLoader
-
-    loader = DataLoader()
-    data = loader.load_all()
-    params = loader.get_parameters()
-
-    # Test KPI computation
-    schedule = {1: (0, "NYC"), 2: (1, "DAL"), 3: (2, "LA")}
-    base_camp_assignment = {"BRA": 1, "GER": 2}
-
-    calc = KPICalculator(loader, params)
-    kpis = calc.compute_all_kpis(schedule, base_camp_assignment)
-
-    print("✓ All 13 KPIs (exact definitions from KPIs.tex):")
-    for kpi_name, value in sorted(kpis.items()):
-        print(f"  {kpi_name}: {value:.4f}")
-
-    # Compute weighted objective
-    objective = calc.compute_objective_weighted(schedule, base_camp_assignment)
-    print(f"\nWeighted objective: {objective:.4f}")

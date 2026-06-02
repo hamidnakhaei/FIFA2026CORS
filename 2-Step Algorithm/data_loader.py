@@ -112,7 +112,9 @@ class DataLoader:
         S = set(venues["venue_id"].unique())
         I = set(teams["team_id"].unique())
         G = set(teams["group"].unique())
-        T = set(range(len(matches)))  # Each match has a potential time slot
+        T_t = set(matches["kickoff_local"].unique()) 
+        T_d = set(matches["date"].unique())
+        T = set((date, time) for date in T_d for time in T_t)  # Cartesian product
 
         # Map teams to their matches
         M_i = {}
