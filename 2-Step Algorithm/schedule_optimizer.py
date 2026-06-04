@@ -360,7 +360,7 @@ class ScheduleOptimizer:
             
            # Combine all normalized KPIs
             return (direct_cost_normalized +
-                    # weights["kpi_1_2"] * kpi_1_2_normalized+
+                    weights["kpi_1_2"] * kpi_1_2_normalized+
                     weights["kpi_4_1"] * kpi_4_1_normalized)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
