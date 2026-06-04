@@ -3,7 +3,7 @@ Schedule optimization solver (Step A) for FIFA 2026 Group-Stage.
 Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPIs.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Dict
 from pyomo.environ import (
     ConcreteModel,
@@ -205,24 +205,6 @@ class ScheduleOptimizer:
             for s1 in model.S:
                 for s2 in model.S:
                     model.transition_link.add(model.stadium_i_s[i, s1] + model.stadium_i_s[i, s2] <= 1+model.transition_i_s1_s2[i, s1, s2])
-
-        # C5: KPI 1.2 - Travel distance (sum of inter-stadium distances)
-        # travel_i = Σ_{s1,s2} transition_i_0_s1_s2 * dist(s1, s2) + transition_i_1_s1_s2 * dist(s1, s2)
-        # def travel_distance_calc(model, i):
-        #     """Compute total travel distance for team i (inter-stadium, no round-trip factor)."""
-        #     dist_dict = self.params["dist_v_v"]  # Precomputed stadium-to-stadium distances
-        #     travel = 0.0
-        #     for k1 in model.M_i[i]:  
-        #         for k2 in model.M_i[i]:
-        #             if k1 >= k2:
-        #                 continue
-        #             for s1 in model.S:
-        #                 for s2 in model.S:
-        #                     d = dist_dict[s1, s2]
-        #                     travel += model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] * d
-        #     return model.travel_distance_i[i] == travel
-        
-        # model.c_travel_distance = Constraint(model.I, rule=travel_distance_calc)
         
         # ---------------------------------------------------------------------------------------
 
@@ -279,18 +261,13 @@ class ScheduleOptimizer:
         model.H5 = ConstraintList()
         time_window = self.params["R_min"] + self.params["match_duration"]
         for i in model.I:
-            for date1, time1 in model.T:
-                for date2, time2 in model.T:
-                    if (date1, time1) != (date2, time2):
-                        if date1 > date2 or (date1 == date2 and time1 > time2):
-                            dt1 = datetime.strptime(f"{date1} {time1}", "%Y-%m-%d %H:%M")
-                            dt2 = datetime.strptime(f"{date2} {time2}", "%Y-%m-%d %H:%M")
-                            time_diff_hours = abs((dt2 - dt1).total_seconds()) / 3600.0
-
-                            if time_diff_hours < time_window:
-                                t1 = (date1, time1)
-                                t2 = (date2, time2)
-                                model.H5.add(sum(model.x[m1, t1, s] for m1 in model.M_i[i] for s in model.S) + sum(model.x[m2, t2, s] for m2 in model.M_i[i] for s in model.S)<= 1)
+            for date1 in set([t[0] for t in model.T]):
+                d1 = date.fromisoformat(date1)
+                all_3_days = [
+                    (d1 + timedelta(days=i)).isoformat()
+                    for i in range(4)
+                ]
+                model.H5.add(sum(model.x[m1, t, s] for m1 in model.M_i[i] for s in model.S for t in model.T if t[0] in all_3_days) <= 1)
         
         # H6: host-nation matches in their country
         def h6_rule(model, team):
@@ -317,18 +294,11 @@ class ScheduleOptimizer:
         )
 
         def h7c_rule(model, g, date, time):
-            t = (date, time)
             group_matches = list(self.M_g[g])
-            date_str, time_str = date, time
-
-            later_slots = [
-                t_prime for t_prime, dt_prime in model.T
-                if dt_prime[0] > date_str or (dt_prime[0] == date_str and dt_prime[1] > time_str)
-            ]
 
             return (
-                sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in later_slots)
-                <= 2 * (1 - model.y[g, t])
+                sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in model.T if t_prime[0] > date or (t_prime[0] == date and t_prime[1] > time))
+                <= 6 * (1 - model.y[g, (date, time)])
             )
         model.h7c = Constraint(
             model.G, model.T, rule=h7c_rule, doc="H7c: Final matches not after final slot"
