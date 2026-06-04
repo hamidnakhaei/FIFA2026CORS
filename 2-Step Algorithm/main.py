@@ -6,7 +6,6 @@ Implements the alternating minimization algorithm with stochastic exploration.
 import pandas as pd
 from typing import Dict
 from data_loader import DataLoader
-from kpis import KPICalculator
 from schedule_optimizer import ScheduleOptimizer
 from base_camp_optimizer import BaseCampOptimizer, load_base_camp_assignment_from_data
 
@@ -31,10 +30,8 @@ class TwoStepOptimizer:
         # Load data
         self.loader = DataLoader(data_dir)
         self.data = self.loader.load_all()
-        params = self.loader.get_parameters()
 
         # Initialize
-        self.kpi_calc = KPICalculator(self.loader, params)
         self.best_objective = float("inf")
         self.best_solution = None
         self.iteration_history = []
