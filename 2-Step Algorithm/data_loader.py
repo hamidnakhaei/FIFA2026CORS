@@ -112,16 +112,17 @@ class DataLoader:
         G = set(teams["group"].unique())
 
         slots = set()
-        dates = set()
-        times = set()
+        # dates = set()
+        # times = set()
         for _, match in self.matches.iterrows():
             date = match["date"]
             time = match["kickoff_local"]
-            dates.add(str(date))
-            times.add(str(time))
-        for date in sorted(dates):
-            for time in sorted(times):
-                slots.add((date, time))
+            slots.add((date, time))
+        #     dates.add(str(date))
+        #     times.add(str(time))
+        # for date in sorted(dates):
+        #     for time in sorted(times):
+        #         slots.add((date, time))
 
         T = sorted(list(slots))
 
@@ -173,6 +174,15 @@ class DataLoader:
                 distance_km = geodesic(camp_loc, venue_loc).kilometers
                 dist[(camp["base_camp_id"], venue["venue_id"])] = distance_km
 
+        # Distance matrix: venue to venue
+        dist_v_v = {}
+        for _, venue1 in venues.iterrows():
+            v1_loc = (venue1["lat"], venue1["lon"])
+            for _, venue2 in venues.iterrows():
+                v2_loc = (venue2["lat"], venue2["lon"])
+                distance_km = geodesic(v1_loc, v2_loc).kilometers
+                dist_v_v[(venue1["venue_id"], venue2["venue_id"])] = distance_km
+
         # Time zone offsets
         tzone_stadium = dict(zip(venues["venue_id"], venues["utc_offset_june"]))
         tzone_basecamp = dict(
@@ -202,6 +212,7 @@ class DataLoader:
 
         return {
             "dist": dist,
+            "dist_v_v": dist_v_v,
             "tzone_stadium": tzone_stadium,
             "tzone_basecamp": tzone_basecamp,
             "cluster": cluster,

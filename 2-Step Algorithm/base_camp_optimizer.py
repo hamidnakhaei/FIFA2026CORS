@@ -40,6 +40,7 @@ class BaseCampOptimizer:
         self.teams = data_loader.get_teams()
         self.base_camps = data_loader.get_base_camps()
         self.params = data_loader.get_parameters()
+        self.matches = data_loader.get_matches()
 
         # Get sets and indices
         (
@@ -76,7 +77,7 @@ class BaseCampOptimizer:
     # ------------------------------------------------------------------ #
     def _build_team_matches(self) -> Dict:
         """Map each team to the match_ids it plays (from the KPI matches table)."""
-        matches = self.M
+        matches = self.matches
         team_matches = {}
         for team_id in self.I:
             mids = matches[
@@ -137,7 +138,7 @@ class BaseCampOptimizer:
     # ------------------------------------------------------------------ #
     #  Exact minimax MILP (Pyomo)
     # ------------------------------------------------------------------ #
-    def optimize(self, time_limit: int = 120, solver_name: str = "gurobi") -> Dict:
+    def optimize(self, time_limit: int = 600, solver_name: str = "gurobi") -> Dict:
         """
         Solve the minimax-travel base-camp assignment as a MILP.
 
@@ -157,30 +158,33 @@ class BaseCampOptimizer:
 
         # Penalized travel coefficients ctilde[i,b] over eligible facilities only.
         ctilde = {}
-        eligible = {}
         for i in teams:
-            elig = self._eligible_facilities(i)
-            eligible[i] = elig
-            for b in elig:
+            for b in self.facilities:
                 ctilde[(i, b)] = self._penalized_travel(i, b)
 
         model = ConcreteModel()
         model.I = Set(initialize=teams)
+        model.B = Set(initialize=self.facilities)
         # Index set of valid (team, facility) pairs (respects the US ban).
-        ib_pairs = [(i, b) for i in teams for b in eligible[i]]
+        ib_pairs = [(i, b) for i in teams for b in self.facilities]
         model.IB = Set(initialize=ib_pairs, dimen=2)
 
         model.u = Var(model.IB, within=Binary)
         model.D = Var(within=NonNegativeReals)
 
-        # (30) exactly one camp per team
+        # (30-1) exactly one camp per team
         def one_camp_rule(m, i):
-            return sum(m.u[i, b] for b in eligible[i]) == 1
+            return sum(m.u[i, b] for b in self.facilities) == 1
         model.one_camp = Constraint(model.I, rule=one_camp_rule)
+
+        # (30-2) at most one team per camp
+        def one_team_rule(m, b):
+            return sum(m.u[i, b] for i in teams if b in self.facilities) <= 1
+        model.one_team = Constraint(model.B, rule=one_team_rule)
 
         # (31) minimax linearization: D >= team i's assigned travel
         def minimax_rule(m, i):
-            return m.D >= sum(ctilde[(i, b)] * m.u[i, b] for b in eligible[i])
+            return m.D >= sum(ctilde[(i, b)] * m.u[i, b] for b in self.facilities)
         model.minimax = Constraint(model.I, rule=minimax_rule)
 
         # (29) minimize the worst-case travel

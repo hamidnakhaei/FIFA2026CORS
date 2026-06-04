@@ -4,10 +4,7 @@ Implements the alternating minimization algorithm with stochastic exploration.
 """
 
 import pandas as pd
-
-from typing import Dict, Tuple
-from datetime import datetime
-
+from typing import Dict
 from data_loader import DataLoader
 from kpis import KPICalculator
 from schedule_optimizer import ScheduleOptimizer
@@ -63,22 +60,16 @@ class TwoStepOptimizer:
         # Solve schedule optimization
         optimizer = ScheduleOptimizer(self.loader, self.kpi_calc)
         optimizer.build_model()
+        result = optimizer.solve(time_limit=time_limit, solver_name=self.solver_name)
+        schedule = result["schedule"]
+        objective_full = result["objective"]
 
-        try:
-            result = optimizer.solve(time_limit=time_limit, solver_name=self.solver_name)
-            schedule = result["schedule"]
-            objective_full = result["objective"]
+        print(f"  ✓ Solver status: {result['status']}")
+        print(f"  ✓ Full KPI objective (all 13 KPIs): {objective_full:.2f}")
+        print(f"  ✓ Matches scheduled: {len(schedule)}")
 
-            self.log(f"  ✓ Solver status: {result['status']}")
-            self.log(f"  ✓ Full KPI objective (all 13 KPIs): {objective_full:.2f}")
-            self.log(f"  ✓ Matches scheduled: {len(schedule)}")
-
-            return {"schedule": schedule, "objective_full": objective_full}
-        except Exception as e:
-            self.log(f"  ⚠ Solver error: {e}")
-            # Return dummy schedule if solver fails
-            dummy_schedule = {i: (i % 24, f"S{i % 16}") for i in range(1, 73)}
-            return {"schedule": dummy_schedule, "objective_full": float("inf")}
+        return {"schedule": schedule, "objective_full": objective_full, "schedule_df": result["schedule_df"]}
+    
 
     def run_step_b(
         self,
@@ -93,27 +84,13 @@ class TwoStepOptimizer:
         """
         optimizer = BaseCampOptimizer(self.loader, self.kpi_calc, schedule)
         result = optimizer.optimize()
+        print(f"  ✓ Base camp optimization completed") 
+        print(f"  ✓ Solver status: {result['status']}")
         return result["assignment"]
 
-    def run_iteration(
-        self,
-        iteration_num: int,
-        base_camp_assignment: Dict,
-        step_a_time_limit: int = 300) -> Tuple[Dict, Dict]:
-        """
-        Run a single iteration of the two-step algorithm.
-        Args:
-            iteration_num: Iteration number (0-indexed)
-            base_camp_assignment: Current base camp assignment
-            step_a_time_limit: Time limit for Step A solver
-        Returns:
-            Tuple of (updated_schedule, updated_base_camp_assignment)
-        """
-        
 
     def run(
-        self,
-        max_iterations: int = 10) -> Dict:
+        self) -> Dict:
         """
         Run the two-step optimization algorithm.
         Args:
@@ -126,13 +103,14 @@ class TwoStepOptimizer:
         print(f"\n---- Step A: Optimize Schedule ---")
         step_a_result = self.run_step_a()
         new_schedule = step_a_result["schedule"]
+        new_schedule_df = step_a_result["schedule_df"]
         objective_a = step_a_result["objective_full"]
 
         # Step B: Optimize base camps
         print(f"\n---- Step B: Optimize Base Camps ---")
         new_base_camp = self.run_step_b(new_schedule)
         
-        return new_schedule, new_base_camp
+        return new_schedule, new_base_camp, new_schedule_df
 
 
 def main():
@@ -141,9 +119,15 @@ def main():
     optimizer = TwoStepOptimizer(data_dir="data", solver_name="gurobi")
     # Run optimization
     result = optimizer.run()
-    csv_results_1 = pd.DataFrame(result[0])
+    csv_results_1 = pd.DataFrame(result[2], columns=['match', 'time', 'stadium'])
     csv_results_1.to_csv("schedule_results.csv", index=False)
-    csv_results_2 = pd.DataFrame(result[1])
+    
+    # Convert base camp assignment dict to DataFrame
+    base_camp_dict = result[1]
+    csv_results_2 = pd.DataFrame([
+        {"team_id": team_id, "base_camp_id": base_camp_id}
+        for team_id, base_camp_id in base_camp_dict.items()
+    ])
     csv_results_2.to_csv("base_camp_results.csv", index=False)
     return result
 

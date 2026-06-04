@@ -8,7 +8,7 @@ class config_params:
 
         # KPI Weights (from Algorithm.tex - 13 selected KPIs)
         self.KPI_WEIGHTS = {
-            "kpi_1_2": 0.10,   # Travel distance
+            "kpi_1_2": 1.00,   # Travel distance
             "kpi_1_3": 0.08,   # Jet lag
             "kpi_1_4": 0.07,   # Geographic Dispersion
             "kpi_1_6": 0.05,   # Rest Asymmetry 
