@@ -123,24 +123,21 @@ class ScheduleOptimizer:
         model.I = Set(initialize=list(self.I))  # Teams
         model.G = Set(initialize=list(self.G))  # Groups
         model.M_i = Set(model.I, ordered=False, initialize=lambda m, i: self.M_i[i])  # Matches per team
-        model.IKS = Set(
+        model.ISS = Set(
                     dimen=3,
                     initialize=lambda m: (
-                        (i, k, s)
+                        (i, s1, s2)
                         for i in m.I
-                        for k in model.M_i[i]
-                        for s in m.S
-                    )
-                )
-        model.IKKSS = Set(
-                    dimen=5,
-                    initialize=lambda m: (
-                        (i, k1, k2, s1, s2)
-                        for i in m.I
-                        for k1 in model.M_i[i]
-                        for k2 in model.M_i[i]
                         for s1 in m.S
                         for s2 in m.S
+                    )
+                )
+        model.IS = Set(
+                    dimen=2,
+                    initialize=lambda m: (
+                        (i, s1)
+                        for i in m.I
+                        for s1 in m.S
                     )
                 )
                     
@@ -179,10 +176,10 @@ class ScheduleOptimizer:
         # Stadium assignment for each team's match position
         # For team i's kth match (k=0,1,2), which stadium is it at?
         # stadium_i_k ∈ S (select exactly one stadium)
-        model.stadium_i_k = Var(model.IKS, within=Binary)
+        model.stadium_i_s = Var(model.IS, within=Binary)
         # Binary transition indicators for inter-stadium costs
         # For team i between match positions k and k', is it playing at (s1, s2)?
-        model.transition_i_k1_k2_s1_s2 = Var(model.IKKSS, within=Binary)
+        model.transition_i_s1_s2 = Var(model.ISS, within=Binary)
         # Continuous travel distance for each team (KPI 1.2)
         # model.travel_distance_i = Var(model.I, within=NonNegativeReals)
         
@@ -194,43 +191,20 @@ class ScheduleOptimizer:
 
         # ===== CONSTRAINTS FOR INTER-STADIUM METRICS (KPI 1.2) =====
         
-        # C1: Link stadium assignment to schedule
-        # For team i's kth match: exactly one stadium, and it must match the schedule assignment
-        model.stadium_assign = ConstraintList()
-        for i in model.I:
-            for k in model.M_i[i]:
-                model.stadium_assign.add(sum(model.stadium_i_k[i, k, s] for s in model.S) == 1)
-        
         # C2: Stadium assignment must match schedule
-        # If x[m_i_k, t, s] = 1, then stadium_i_k[i, k, s] = 1
+        # If x[m_i_k, t, s] = 1, then stadium_i_k[i, s] = 1
         model.stadium_schedule_link = ConstraintList()
         for i in model.I:
-            for k in model.M_i[i]:
-                for s in model.S:
-                    model.stadium_schedule_link.add(model.stadium_i_k[i, k, s] == sum(model.x[k, t, s] for t in model.T))
-        
-        # C3: Inter-stadium transitions (for computing travel, timezone, country costs)
-        # For team i between matches k and k+1, exactly one (s1, s2) pair is active
-        model.transition_assign = ConstraintList()
-        for i in model.I:
-            for k1 in model.M_i[i]:
-                for k2 in model.M_i[i]:
-                    if k1 >= k2:
-                        continue
-                    model.transition_assign.add(sum(model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] for s1 in model.S for s2 in model.S) == 1)
-
-       # C4: Transition must match stadium assignments
-        # transition_i_k1_k2_s1_s2 = 1 only if stadium_i_k[i, k1, s1] = 1 AND stadium_i_k[i, k2, s2] = 1
+            for s in model.S:
+                model.stadium_schedule_link.add(3*model.stadium_i_s[i, s] >= sum(model.x[k, t, s] for k in model.M_i[i] for t in model.T))
+    
+        # C4: Transition must match stadium assignments
+        # transition_i_s1_s2 = 1 only if stadium_i_k[i, k1, s1] = 1 AND stadium_i_k[i, k2, s2] = 1
         model.transition_link = ConstraintList()
         for i in model.I:
-            for k1 in model.M_i[i]:
-                for k2 in model.M_i[i]:
-                    if k1 >= k2:
-                        continue
-                    for s1 in model.S:
-                        for s2 in model.S:
-                            model.transition_link.add(model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] <= model.stadium_i_k[i, k1, s1])
-                            model.transition_link.add(model.transition_i_k1_k2_s1_s2[i, k1, k2, s1, s2] <= model.stadium_i_k[i, k2, s2])
+            for s1 in model.S:
+                for s2 in model.S:
+                    model.transition_link.add(model.stadium_i_s[i, s1] + model.stadium_i_s[i, s2] <= 1+model.transition_i_s1_s2[i, s1, s2])
 
         # C5: KPI 1.2 - Travel distance (sum of inter-stadium distances)
         # travel_i = Σ_{s1,s2} transition_i_0_s1_s2 * dist(s1, s2) + transition_i_1_s1_s2 * dist(s1, s2)
@@ -406,8 +380,9 @@ class ScheduleOptimizer:
             )
             
             # # KPI 1.2: Travel distance (sum of inter-stadium distances)
-            # kpi_1_2 = sum(model.travel_distance_i[i] for i in model.I)
-            # kpi_1_2_normalized = kpi_1_2 / norm_factors["kpi_1_2"]
+            dist_dict = self.params["dist_v_v"]
+            kpi_1_2 = sum(model.transition_i_s1_s2[i, s1, s2]*dist_dict[s1, s2] for i in model.I for s1 in model.S for s2 in model.S)
+            kpi_1_2_normalized = kpi_1_2 / norm_factors["kpi_1_2"]
             
             # # KPI 4.1: Venue-load balance (mean absolute deviation of match counts)
             kpi_4_1 = sum(model.d_s[s] for s in model.S)
