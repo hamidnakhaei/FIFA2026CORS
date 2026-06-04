@@ -114,7 +114,7 @@ class DataLoader:
         slots = set()
         # dates = set()
         # times = set()
-        for _, match in self.matches.iterrows():
+        for _, match in matches.iterrows():
             date = match["date"]
             time = match["kickoff_local"]
             slots.add((date, time))

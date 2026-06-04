@@ -42,11 +42,9 @@ class TwoStepOptimizer:
         assignment = load_base_camp_assignment_from_data(base_camps)
         return assignment
 
-    def run_step_a(self, time_limit: int = 300) -> Dict:
+    def run_step_a(self, time_limit: int = 600) -> Dict:
         """
-        Step A: Optimize schedule while holding base camps fixed.
-        Uses full KPI objective (all 13 KPIs) in the MILP solver.
-
+        Step A: Optimize schedule
         Args:
             time_limit: Solver time limit in seconds
 
@@ -55,7 +53,7 @@ class TwoStepOptimizer:
         """
 
         # Solve schedule optimization
-        optimizer = ScheduleOptimizer(self.loader, self.kpi_calc)
+        optimizer = ScheduleOptimizer(self.loader)
         optimizer.build_model()
         result = optimizer.solve(time_limit=time_limit, solver_name=self.solver_name)
         schedule = result["schedule"]
@@ -71,18 +69,98 @@ class TwoStepOptimizer:
         schedule: Dict) -> Dict:
         """
         Step B: Optimize base camps while holding schedule fixed.
-        Uses full KPI objective (all 13 KPIs) to evaluate base camp changes.
         Args:
             schedule: Fixed schedule from Step A
         Returns:
             Dictionary with optimized base camp assignment and objective
         """
-        optimizer = BaseCampOptimizer(self.loader, self.kpi_calc, schedule)
+        optimizer = BaseCampOptimizer(self.loader, schedule)
         result = optimizer.optimize()
         print(f"  ✓ Base camp optimization completed") 
         print(f"  ✓ Solver status: {result['status']}")
         return result["assignment"]
 
+    def export_results(
+        self,
+        schedule: Dict,
+        base_camp_assignment: Dict,
+        schedule_df: pd.DataFrame,
+        output_dir: str = ".") -> Dict:
+        """
+        Export optimization results in the same format as imported files.
+
+        Step A (Schedule): Exported as matches.csv with columns
+                          [match_id, group, round, team_a_id, team_b_id, 
+                           venue_id, date, kickoff_local]
+
+        Step B (Base Camps): Exported as base_camps.csv with columns
+                             [base_camp_id, team_id, training_site, city, 
+                              country, lat, lon, utc_offset_june]
+
+        Args:
+            schedule: Schedule dict from Step A
+            base_camp_assignment: Base camp assignment dict (team_id -> base_camp_id)
+            schedule_df: Schedule DataFrame from Step A solve result
+            output_dir: Output directory for CSV files
+
+        Returns:
+            Dictionary with paths to exported files
+        """
+        # Get original data for reference
+        matches_original = self.loader.get_matches()
+        base_camps_original = self.loader.get_base_camps()
+
+        # Export Step A: Schedule results in matches.csv format
+        schedule_results = []
+        for match_id, venue_id_assigned in schedule.items():
+            # Find original match data
+            match_row = matches_original[matches_original['match_id'] == match_id].iloc[0]
+            
+            schedule_results.append({
+                'match_id': match_id,
+                'group': match_row['group'],
+                'team_a_id': match_row['team_a_id'],
+                'team_b_id': match_row['team_b_id'],
+                'venue_id': venue_id_assigned[-1],
+                'date': venue_id_assigned[0][0],
+                'kickoff_local': venue_id_assigned[0][1]
+            })
+        
+        schedule_export_df = pd.DataFrame(schedule_results)
+        schedule_export_path = f"{output_dir}/schedule_results.csv"
+        schedule_export_df.to_csv(schedule_export_path, index=False)
+        print(f"✓ Schedule exported to {schedule_export_path}")
+
+        # Export Step B: Base camp assignment in base_camps.csv format
+        base_camp_results = []
+        for team_id, base_camp_id in base_camp_assignment.items():
+            # Find base camp details from original data
+            base_camp_row = base_camps_original[
+                base_camps_original['base_camp_id'] == base_camp_id
+            ].iloc[0]
+            
+            base_camp_results.append({
+                'base_camp_id': base_camp_id,
+                'team_id': team_id,
+                'training_site': base_camp_row['training_site'],
+                'city': base_camp_row['city'],
+                'country': base_camp_row['country'],
+                'lat': base_camp_row['lat'],
+                'lon': base_camp_row['lon'],
+                'utc_offset_june': base_camp_row['utc_offset_june']
+            })
+        
+        base_camp_export_df = pd.DataFrame(base_camp_results)
+        base_camp_export_path = f"{output_dir}/base_camp_results.csv"
+        base_camp_export_df.to_csv(base_camp_export_path, index=False)
+        print(f"✓ Base camps exported to {base_camp_export_path}")
+
+        return {
+            'schedule_path': schedule_export_path,
+            'base_camp_path': base_camp_export_path,
+            'schedule_df': schedule_export_df,
+            'base_camp_df': base_camp_export_df
+        }
 
     def run(
         self) -> Dict:
@@ -105,26 +183,30 @@ class TwoStepOptimizer:
         print(f"\n---- Step B: Optimize Base Camps ---")
         new_base_camp = self.run_step_b(new_schedule)
         
-        return new_schedule, new_base_camp, new_schedule_df
+        return {
+            'schedule': new_schedule,
+            'schedule_df': new_schedule_df,
+            'base_camp_assignment': new_base_camp
+        }
 
 
 def main():
     """Main entry point."""
     # Initialize optimizer
     optimizer = TwoStepOptimizer(data_dir="data", solver_name="gurobi")
+    
     # Run optimization
     result = optimizer.run()
-    csv_results_1 = pd.DataFrame(result[2], columns=['match', 'time', 'stadium'])
-    csv_results_1.to_csv("schedule_results.csv", index=False)
     
-    # Convert base camp assignment dict to DataFrame
-    base_camp_dict = result[1]
-    csv_results_2 = pd.DataFrame([
-        {"team_id": team_id, "base_camp_id": base_camp_id}
-        for team_id, base_camp_id in base_camp_dict.items()
-    ])
-    csv_results_2.to_csv("base_camp_results.csv", index=False)
-    return result
+    # Export results in proper CSV format
+    export_result = optimizer.export_results(
+        schedule=result['schedule'],
+        base_camp_assignment=result['base_camp_assignment'],
+        schedule_df=result['schedule_df'],
+        output_dir="2-Step Algorithm/outputs"
+    )
+    
+    return result, export_result
 
 
 if __name__ == "__main__":

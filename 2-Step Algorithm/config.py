@@ -8,17 +8,9 @@ class config_params:
 
         # KPI Weights (from Algorithm.tex - 13 selected KPIs)
         self.KPI_WEIGHTS = {
-            "kpi_1_2": 1.00,   # Travel distance
-            "kpi_1_3": 0.08,   # Jet lag
-            "kpi_1_4": 0.07,   # Geographic Dispersion
-            "kpi_1_6": 0.05,   # Rest Asymmetry 
-            "kpi_1_7": 0.05,   # US entry/visa exposure
-            "kpi_2_2": 0.12,   # Heat Load
-            "kpi_3_3": 0.08,   # Round-Order Balance Index (First-Mover)
+            "kpi_1_2": 3.00,   # Travel distance
+            "kpi_2_2": 2.00,   # Heat Load
             "kpi_4_1": 1.00,   # Venue-Load Balance
-            "kpi_4_2": 0.08,   # Fan Accessibility and Same-City Overlap
-            "kpi_5_2": 0.06,   # Marquee-Match Slot Quality and Overlap Penalty
-            "kpi_5_3": 0.04,   # Host-City Economic Equity
         }
 
         # Hard constraints constants

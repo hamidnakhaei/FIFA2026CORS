@@ -30,10 +30,9 @@ class BaseCampOptimizer:
     """Solve Step B: minimize the maximum per-team travel distance,
     holding the schedule fixed."""
 
-    def __init__(self, data_loader, kpi_calculator, schedule: Dict,
+    def __init__(self, data_loader, schedule: Dict,
                  bond_penalty_km: float = 1500.0):
         self.loader = data_loader
-        self.kpi_calc = kpi_calculator
         self.schedule = schedule
 
         self.teams = data_loader.get_teams()
