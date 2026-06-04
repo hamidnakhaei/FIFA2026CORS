@@ -75,9 +75,9 @@ Hourly temperature for every venue across the full group-stage window. Query by 
 
 ---
 
-## 6. `broadcast_markets.csv`
+## 6. `broadcast_markets.csv` — 48 rows
 
-One row per country; can be extended to other major football markets.
+One row per qualified nation. Each row links a country to its competing team, local prime-time window, UTC offset, and population-based audience weight.
 
 | Column | Type | Description |
 |---|---|---|
@@ -155,7 +155,7 @@ broadcast_markets ── team_id ───────► teams (to link market 
 | `GER` | Germany | E |
 | `GHA` | Ghana | L |
 | `HAI` | Haiti | C |
-| `IRN` | IR Iran *(withdrew post-draw)* | G |
+| `IRN` | IR Iran | G |
 | `IRQ` | Iraq | I |
 | `JOR` | Jordan | J |
 | `JPN` | Japan | F |
