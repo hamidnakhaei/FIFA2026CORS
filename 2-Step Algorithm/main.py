@@ -64,10 +64,8 @@ class TwoStepOptimizer:
         schedule = result["schedule"]
         objective_full = result["objective"]
 
+        print(f"  ✓ Schedule optimization completed")
         print(f"  ✓ Solver status: {result['status']}")
-        print(f"  ✓ Full KPI objective (all 13 KPIs): {objective_full:.2f}")
-        print(f"  ✓ Matches scheduled: {len(schedule)}")
-
         return {"schedule": schedule, "objective_full": objective_full, "schedule_df": result["schedule_df"]}
     
 

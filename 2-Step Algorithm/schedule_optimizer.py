@@ -2,9 +2,8 @@
 Schedule optimization solver (Step A) for FIFA 2026 Group-Stage.
 Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPIs.
 """
-import numpy as np
-from datetime import datetime, timedelta
-import pandas as pd
+
+from datetime import datetime
 from typing import Dict
 from pyomo.environ import (
     ConcreteModel,

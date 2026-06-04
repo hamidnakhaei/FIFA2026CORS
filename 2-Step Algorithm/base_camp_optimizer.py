@@ -24,7 +24,6 @@ minimax objective.
 
 import pandas as pd
 from typing import Dict, List
-from copy import deepcopy
 
 
 class BaseCampOptimizer:
