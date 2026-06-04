@@ -10,6 +10,7 @@ class config_params:
         self.KPI_WEIGHTS = {
             "kpi_1_2": 3.00,   # Travel distance
             "kpi_2_2": 2.00,   # Heat Load
+            "kpi_3_1": 10.00,   # Heat Load
             "kpi_4_1": 1.00,   # Venue-Load Balance
         }
 

@@ -44,6 +44,7 @@ class BaseCampOptimizer:
         (
             self.M,
             self.T,
+            self.T_s,
             self.S,
             self.I,
             self.G,

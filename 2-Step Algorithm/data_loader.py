@@ -3,6 +3,7 @@ Data loader and preprocessing module for FIFA 2026 Group-Stage Optimization.
 Loads and processes data from CSV files in the data/ folder.
 """
 
+from datetime import datetime, timedelta
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Tuple, Set
@@ -111,18 +112,20 @@ class DataLoader:
         I = set(teams["team_id"].unique())
         G = set(teams["group"].unique())
 
+        T_s = {}
+        for s in S:
+            T_s[s] = set()
+
         slots = set()
-        # dates = set()
-        # times = set()
         for _, match in matches.iterrows():
             date = match["date"]
+            venue = match["venue_id"]
             time = match["kickoff_local"]
-            slots.add((date, time))
-        #     dates.add(str(date))
-        #     times.add(str(time))
-        # for date in sorted(dates):
-        #     for time in sorted(times):
-        #         slots.add((date, time))
+            v_offset = int(venues[venues['venue_id'] == venue]['utc_offset_june'].iloc[0])
+            t = pd.to_datetime(f"{date} {time}") - pd.Timedelta(hours=v_offset)
+            t_str = (t.strftime("%Y-%m-%d"), t.strftime("%H:%M"))
+            slots.add(t_str)
+            T_s[venue].add(t_str)
 
         T = sorted(list(slots))
 
@@ -146,7 +149,7 @@ class DataLoader:
             country_stadiums = venues[venues["country"] == country]["venue_id"].tolist()
             S_c[country] = set(country_stadiums)
 
-        return M, T, S, I, G, M_i, M_g, S_c
+        return M, T, T_s, S, I, G, M_i, M_g, S_c
 
     def get_parameters(self) -> Dict:
         """

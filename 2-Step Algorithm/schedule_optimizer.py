@@ -4,6 +4,7 @@ Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPI
 """
 
 from datetime import date, datetime, timedelta
+import pandas as pd
 from typing import Dict
 from pyomo.environ import (
     ConcreteModel,
@@ -36,6 +37,7 @@ class ScheduleOptimizer:
         (
             self.M,
             self.T,
+            self.T_s,
             self.S,
             self.I,
             self.G,
@@ -72,6 +74,8 @@ class ScheduleOptimizer:
         # KPI 2.2: Heat load (WBGT hours per team)
         # Excess above 28°C, worst case ~10°C excess × 3 matches × 32 teams
         factors["kpi_2_2"] = 10.0 * 3 * len(self.I)
+
+        factors["kpi_3_1"] = 1.0 * len(self.G)
         
         # KPI 4.1: Venue-load balance (mean absolute deviation)
         # Worst case: unbalanced distribution of 72 matches across 12 stadiums
@@ -123,6 +127,7 @@ class ScheduleOptimizer:
         model.I = Set(initialize=list(self.I))  # Teams
         model.G = Set(initialize=list(self.G))  # Groups
         model.M_i = Set(model.I, ordered=False, initialize=lambda m, i: self.M_i[i])  # Matches per team
+        model.T_s = Set(model.S, ordered=False, initialize=lambda m, s: self.T_s[s])  # Valid time slots per stadium
         model.ISS = Set(
                     dimen=3,
                     initialize=lambda m: (
@@ -230,9 +235,15 @@ class ScheduleOptimizer:
 
         # Hard Constraints
 
+        # H0: each stadium has specific valid times
+        # def h0_rule(model, s):
+        #     return sum(model.x[m, t, s] for m in model.M for t in model.T if t not in model.T_s[s]) == 0
+            
+        # model.h0 = Constraint(model.S, rule=h0_rule, doc="H0: Stadium availability")
+
         # H1-1: Each match scheduled exactly once
         def h1_rule(model, m):
-            return sum(model.x[m, t, s] for t in model.T for s in model.S) == 1
+            return sum(model.x[m, t, s] for s in model.S for t in model.T) == 1
 
         model.h1 = Constraint(model.M, rule=h1_rule, doc="H1: Each match once")
 
@@ -336,18 +347,16 @@ class ScheduleOptimizer:
             norm_factors = self.kpi_normalization_factors
             
             # KPI 1.7 + 2.2: Direct coefficient-based KPIs (from precomputed coefficients)
-            direct_cost = sum(
+            cost2_2 = sum(
                 model.kpi_cost[t, s] * model.x[m, t, s]
                 for m in model.M
                 for t in model.T
                 for s in model.S
             )
-            direct_cost_norm = (
-                weights["kpi_2_2"] * norm_factors["kpi_2_2"]
-            )
-            direct_cost_normalized = (
-                direct_cost / direct_cost_norm if direct_cost_norm > 0 else direct_cost
-            )
+            cost_3_1 = sum(1-model.y[g, t] for g in model.G for t in model.T)
+            
+            kpi_2_2_normalized = cost2_2 / norm_factors["kpi_2_2"]
+            # kpi_3_1_normalized = cost_3_1 / norm_factors["kpi_3_1"]
             
             # # KPI 1.2: Travel distance (sum of inter-stadium distances)
             dist_dict = self.params["dist_v_v"]
@@ -359,8 +368,9 @@ class ScheduleOptimizer:
             kpi_4_1_normalized = kpi_4_1 / norm_factors.get("kpi_4_1", 1.0)
             
            # Combine all normalized KPIs
-            return (direct_cost_normalized +
-                    weights["kpi_1_2"] * kpi_1_2_normalized+
+            return (weights["kpi_2_2"] * kpi_2_2_normalized+
+                    # weights["kpi_1_2"] * kpi_1_2_normalized+
+                    # weights["kpi_3_1"] * kpi_3_1_normalized+
                     weights["kpi_4_1"] * kpi_4_1_normalized)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
@@ -412,14 +422,21 @@ class ScheduleOptimizer:
             for t in self.model.T:
                 for s in self.model.S:
                     if value(self.model.x[m, t, s]) > 0.5:
-                        schedule[m] = (t, s)
+                        # get local time
+                        v_offset = int(self.venues[self.venues['venue_id'] == s]['utc_offset_june'].iloc[0])
+                        t_prime = pd.to_datetime(f"{t[0]} {t[1]}") + pd.Timedelta(hours=v_offset)
+                        t_str = (t_prime.strftime("%Y-%m-%d"), t_prime.strftime("%H:%M"))
+                        schedule[m] = (t_str, s)
 
         schedule_DF = []
         for m in self.model.M:
             for t in self.model.T:
                 for s in self.model.S:
                     if value(self.model.x[m, t, s]) > 0.5:
-                        schedule_DF.append((m, t, s))
+                        v_offset = int(self.venues[self.venues['venue_id'] == s]['utc_offset_june'].iloc[0])
+                        t_prime = pd.to_datetime(f"{t[0]} {t[1]}") + pd.Timedelta(hours=v_offset)
+                        t_str = (t_prime.strftime("%Y-%m-%d"), t_prime.strftime("%H:%M"))
+                        schedule_DF.append((m, t_str, s))
 
         return {
             "status": str(result.solver.status),
