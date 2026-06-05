@@ -2,24 +2,31 @@
 Base camp optimization (Step B) for FIFA 2026 Group-Stage.
 
 Re-optimizes team base camps while holding the schedule fixed, by solving the
-minimax-travel assignment problem (eq. 29-33 of the model):
+total-travel assignment problem:
 
-        min_{u, D}  D
+        min_{u}  sum_i sum_b ctilde[i,b] * u[i,b]
         s.t.  sum_b u[i,b] = 1                     for all teams i   (one camp)
-              D >= sum_b ctilde[i,b] * u[i,b]      for all teams i   (minimax)
-              u[i,b] = 0  for i banned, b in US                      (US ban)
+              sum_i u[i,b] <= 1                     for all camps b   (one team/camp)
               u[i,b] in {0,1}
 
 where ctilde[i,b] is the round-trip travel of team i based at facility b
 (summed over its three matches, factor 2 for out-and-back), plus a US visa-bond
-penalty for bond teams choosing a US camp. The objective minimizes the maximum
-per-team travel distance across all 48 teams (KPI 1.2 equity / minimax).
+penalty for bond teams choosing a US camp. The objective minimizes the TOTAL
+(hence the average) per-team travel distance across all 48 teams
+(KPI 1.1 efficiency objective).
+
+CHANGES vs. the previous version:
+  * Fix 2 (key-type mismatch): self.match_stadium is now keyed by int match_id
+    so lookups in _penalized_travel succeed (previously every lookup missed,
+    scoring all travel as 0 and producing an arbitrary assignment).
+  * Fix 3 (objective): the model now minimizes the SUM of assigned travel
+    (i.e. the average), instead of the minimax worst-case travel. The minimax
+    bound D and its linearization constraint have been removed.
 
 The primary solver is Pyomo + a MILP backend (gurobi/cbc/glpk), matching
 schedule_optimizer.py. If no solver is available, a greedy fallback is used:
-since the only coupling between teams is the shared bound D, each team
-independently picking its minimum feasible (penalized) travel is optimal for the
-minimax objective.
+since the only coupling between teams is the shared "one team per camp"
+constraint, a sum-minimizing assignment is a linear assignment problem.
 """
 
 import pandas as pd
@@ -27,7 +34,7 @@ from typing import Dict, List
 
 
 class BaseCampOptimizer:
-    """Solve Step B: minimize the maximum per-team travel distance,
+    """Solve Step B: minimize the total (average) per-team travel distance,
     holding the schedule fixed."""
 
     def __init__(self, data_loader, schedule: Dict,
@@ -60,8 +67,10 @@ class BaseCampOptimizer:
 
         # Pre-compute the stadium each match is played in (schedule is fixed)
         #   schedule: match_id -> (slot, stadium_id)
+        # FIX 2: key by int(match_id) so it matches the int match_ids stored in
+        #        self.team_matches (previously keyed by str -> every lookup missed).
         self.match_stadium = {
-            str(m): stadium_id for m, (slot, stadium_id) in self.schedule.items()
+            int(m): stadium_id for m, (slot, stadium_id) in self.schedule.items()
         }
 
         # team_id -> list of its match_ids (each team plays 3)
@@ -127,35 +136,48 @@ class BaseCampOptimizer:
             for team_id, base_camp_id in base_camp_assignment.items()
         }
 
+    def compute_total_travel(self, base_camp_assignment: Dict) -> float:
+        """Objective: the total per-team travel distance (sum over all teams)."""
+        td = self.compute_team_travel(base_camp_assignment)
+        return float(sum(td.values()))
+
+    def compute_avg_travel(self, base_camp_assignment: Dict) -> float:
+        """Average per-team travel distance."""
+        td = self.compute_team_travel(base_camp_assignment)
+        if not td:
+            return 0.0
+        return float(sum(td.values()) / len(td))
+
     def compute_max_travel(self, base_camp_assignment: Dict) -> float:
-        """Minimax objective: the maximum per-team travel distance."""
+        """Worst-case (minimax) per-team travel distance, kept for reporting."""
         td = self.compute_team_travel(base_camp_assignment)
         if not td:
             return 0.0
         return float(max(td.values()))
 
     # ------------------------------------------------------------------ #
-    #  Exact minimax MILP (Pyomo)
+    #  Exact total-travel MILP (Pyomo)
     # ------------------------------------------------------------------ #
     def optimize(self, time_limit: int = 600, solver_name: str = "gurobi") -> Dict:
         """
-        Solve the minimax-travel base-camp assignment as a MILP.
+        Solve the total-travel base-camp assignment as a MILP.
 
-        Returns dict with best_assignment, best_cost (= max travel), status.
-        Falls back to the greedy solver if Pyomo / a MILP solver is unavailable.
+        Returns dict with assignment, cost (= total travel), avg_travel,
+        max_travel, status. Falls back to the greedy solver if Pyomo / a MILP
+        solver is unavailable.
         """
         try:
             from pyomo.environ import (
                 ConcreteModel, Set, Var, Objective, Constraint,
-                minimize, Binary, NonNegativeReals, SolverFactory, value,
+                minimize, Binary, SolverFactory, value,
             )
         except Exception as e:
-            print(f"  ⚠ Pyomo unavailable ({e}); using greedy minimax fallback.")
-            return self._greedy_minimax()
+            print(f"  ⚠ Pyomo unavailable ({e}); using greedy fallback.")
+            return self._greedy_min_sum()
 
         teams = list(self.I)
 
-        # Penalized travel coefficients ctilde[i,b] over eligible facilities only.
+        # Penalized travel coefficients ctilde[i,b] over all facilities.
         ctilde = {}
         for i in teams:
             for b in self.facilities:
@@ -164,12 +186,10 @@ class BaseCampOptimizer:
         model = ConcreteModel()
         model.I = Set(initialize=teams)
         model.B = Set(initialize=self.facilities)
-        # Index set of valid (team, facility) pairs (respects the US ban).
         ib_pairs = [(i, b) for i in teams for b in self.facilities]
         model.IB = Set(initialize=ib_pairs, dimen=2)
 
         model.u = Var(model.IB, within=Binary)
-        model.D = Var(within=NonNegativeReals)
 
         # (30-1) exactly one camp per team
         def one_camp_rule(m, i):
@@ -178,18 +198,17 @@ class BaseCampOptimizer:
 
         # (30-2) at most one team per camp
         def one_team_rule(m, b):
-            return sum(m.u[i, b] for i in teams if b in self.facilities) <= 1
+            return sum(m.u[i, b] for i in teams) <= 1
         model.one_team = Constraint(model.B, rule=one_team_rule)
 
-        # (31) minimax linearization: D >= team i's assigned travel
-        def minimax_rule(m, i):
-            return m.D >= sum(ctilde[(i, b)] * m.u[i, b] for b in self.facilities)
-        model.minimax = Constraint(model.I, rule=minimax_rule)
+        # FIX 3: minimize TOTAL (hence average) assigned travel instead of the
+        #        minimax worst case. No D variable / minimax constraint needed.
+        model.obj = Objective(
+            expr=sum(ctilde[(i, b)] * model.u[i, b] for (i, b) in ib_pairs),
+            sense=minimize,
+        )
 
-        # (29) minimize the worst-case travel
-        model.obj = Objective(expr=model.D, sense=minimize)
-
-        # Solve 
+        # Solve
         solver, used = None, None
         for cand in [solver_name, "gurobi", "cbc", "glpk"]:
             try:
@@ -200,8 +219,8 @@ class BaseCampOptimizer:
             except Exception:
                 continue
         if solver is None:
-            print("  ⚠ No MILP solver available; using greedy minimax fallback.")
-            return self._greedy_minimax()
+            print("  ⚠ No MILP solver available; using greedy fallback.")
+            return self._greedy_min_sum()
 
         print(f"  Using solver: {used}")
         if used == "gurobi":
@@ -217,11 +236,53 @@ class BaseCampOptimizer:
         for (i, b) in ib_pairs:
             if value(model.u[i, b]) is not None and value(model.u[i, b]) > 0.5:
                 assignment[i] = b
-        best_cost = float(value(model.D))
+
+        total_cost = float(value(model.obj))
+        n = len(assignment) if assignment else 1
 
         return {
             "assignment": assignment,
-            "cost": best_cost,
+            "cost": total_cost,                       # total travel
+            "avg_travel": total_cost / n,             # average per team
+            "max_travel": self.compute_max_travel(assignment),
             "status": str(result.solver.status),
             "solver": used,
         }
+
+    # ------------------------------------------------------------------ #
+    #  Greedy fallback (no MILP solver): solve the min-sum assignment
+    #  with a simple cheapest-feasible-camp heuristic respecting the
+    #  one-team-per-camp constraint.
+    # ------------------------------------------------------------------ #
+    def _greedy_min_sum(self) -> Dict:
+        """Greedy min-sum assignment: process teams and assign each its cheapest
+        still-available eligible camp. Coupling is only the one-team-per-camp
+        rule, so a greedy pass over (team, camp) costs is a reasonable
+        heuristic when no MILP solver is present."""
+        used_camps = set()
+        assignment = {}
+
+        # Build all feasible (cost, team, camp) triples, cheapest first.
+        triples = []
+        for i in self.I:
+            for b in self._eligible_facilities(i):
+                triples.append((self._penalized_travel(i, b), i, b))
+        triples.sort(key=lambda x: x[0])
+
+        for cost, i, b in triples:
+            if i in assignment or b in used_camps:
+                continue
+            assignment[i] = b
+            used_camps.add(b)
+
+        total_cost = self.compute_total_travel(assignment)
+        n = len(assignment) if assignment else 1
+        return {
+            "assignment": assignment,
+            "cost": total_cost,
+            "avg_travel": total_cost / n,
+            "max_travel": self.compute_max_travel(assignment),
+            "status": "greedy_fallback",
+            "solver": "greedy",
+        }
+
