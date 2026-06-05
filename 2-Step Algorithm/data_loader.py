@@ -113,8 +113,12 @@ class DataLoader:
         G = set(teams["group"].unique())
 
         T_s = {}
+        T_s_t = {}
+        T_s_d = {}
         for s in S:
             T_s[s] = set()
+            T_s_d[s] = set()
+            T_s_t[s] = set()
 
         slots = set()
         for _, match in matches.iterrows():
@@ -124,8 +128,19 @@ class DataLoader:
             v_offset = int(venues[venues['venue_id'] == venue]['utc_offset_june'].iloc[0])
             t = pd.to_datetime(f"{date} {time}") - pd.Timedelta(hours=v_offset)
             t_str = (t.strftime("%Y-%m-%d"), t.strftime("%H:%M"))
-            slots.add(t_str)
             T_s[venue].add(t_str)
+            slots.add(t_str)
+
+        for t in slots:
+            if t[0] == "2026-06-26" or t[0] == "2026-06-27":
+                for s in S:
+                    T_s[s].add(t)
+        # for s in S:
+        #     for d in T_s_d[s]:
+        #         for t in T_s_t[s]:
+        #             slot = (d, t)
+        #             slots.add(slot)
+        #             T_s[s].add(slot)
 
         T = sorted(list(slots))
 

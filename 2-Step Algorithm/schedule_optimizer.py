@@ -3,7 +3,8 @@ Schedule optimization solver (Step A) for FIFA 2026 Group-Stage.
 Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPIs.
 """
 
-from datetime import date, datetime, timedelta
+from collections import Counter
+from datetime import date, timedelta
 import pandas as pd
 from typing import Dict
 from pyomo.environ import (
@@ -56,7 +57,24 @@ class ScheduleOptimizer:
         
         # Compute KPI normalization factors
         self.kpi_normalization_factors = self._compute_kpi_normalization_factors()
-              
+
+    def evaluate_schedule(self, match_to_venue: dict) -> dict:
+        """KPI components (model's definition) for any {match_id: venue_id} map."""
+        dvv = self.params["dist_v_v"]
+        team_travel = {}
+        for i in self.I:
+            vs = [match_to_venue[m] for m in self.M_i[i] if m in match_to_venue]
+            team_travel[i] = 2.0 * sum(dvv[a, b]
+                                    for j, a in enumerate(vs) for b in vs[j+1:])
+        counts = Counter(match_to_venue.values())
+        mean_c = len(self.M) / len(self.S)
+        return {
+            "sum_travel": sum(team_travel.values()),
+            "max_travel": max(team_travel.values()),
+            "avg_travel": sum(team_travel.values()) / len(team_travel),
+            "venue_dev": sum(abs(counts.get(s, 0) - mean_c) for s in self.S),
+        }
+
     def _compute_kpi_normalization_factors(self) -> Dict:
         """
         Compute reference/baseline values for each KPI to normalize them.
@@ -68,25 +86,29 @@ class ScheduleOptimizer:
         
         # KPI 1.2: Travel dispersion (km)
         # Worst case: all teams travel max distance for all matches
-        max_dist = self.params.get("dist", {})
-        factors["kpi_1_2"] = max(max_dist.values()) * len(self.M) * 2.0  # Upper bound estimate
-              
+        # dvv = max(self.params["dist_v_v"].values())
+        # factors["kpi_1_2"] = {}
+        # factors["kpi_1_2"]["max"] = max(dvv * 2 * 3, 0.1)  # Upper bound estimate
+        # factors["kpi_1_2"]["sum"] = max(dvv * 2 * 3 * len(self.I), 0.1) # Sum estimate
+
         # KPI 2.2: Heat load (WBGT hours per team)
         # Excess above 28°C, worst case ~10°C excess × 3 matches × 32 teams
-        factors["kpi_2_2"] = 10.0 * 3 * len(self.I)
-
-        factors["kpi_3_1"] = 1.0 * len(self.G)
+        factors["kpi_2_2"] = max(10.0 * 3 * len(self.I), 0.1)
         
         # KPI 4.1: Venue-load balance (mean absolute deviation)
         # Worst case: unbalanced distribution of 72 matches across 12 stadiums
-        avg_matches = len(self.M) / len(self.S) if len(self.S) > 0 else 1
-        max_deviation = len(self.M) - avg_matches  # Max possible deviation
-        factors["kpi_4_1"] = max_deviation * len(self.S) / 2  # Typical MAD estimate
-        
-        # Apply minimum threshold to avoid division by zero
-        for kpi in factors:
-            factors[kpi] = max(factors[kpi], 0.1)
-        
+        # avg_matches = len(self.M) / len(self.S) if len(self.S) > 0 else 1
+        # max_deviation = len(self.M) - avg_matches  # Max possible deviation
+        # factors["kpi_4_1"] = max(max_deviation * len(self.S) / 2, 0.1)  # Typical MAD estimate
+
+        base = self.evaluate_schedule(
+            {r["match_id"]: r["venue_id"] for _, r in self.matches.iterrows()}
+        )
+        factors["kpi_1_2"] = {"sum": max(base["sum_travel"], 0.1),
+                            "max": max(base["max_travel"], 0.1)}
+        factors["kpi_4_1"] = max(base["venue_dev"], 0.1)
+        # do the same for heat once you compute its official value
+               
         return factors
     
     def _compute_kpi_coefficients(self) -> Dict:
@@ -99,20 +121,20 @@ class ScheduleOptimizer:
         """
         kpi_costs = {}
         
-        for (date, time_str) in self.T:
-            for s in self.S:
+        for s in self.S:
+            for (date_str, time_str) in self.T_s[s]:        
                 # KPI 2.2: Per-team heat load
                 # Excess WBGT: h_mt = max(0, WBGT - 28)
                 venue_weather = self.params["weather"]
                 if isinstance(venue_weather, dict):
-                    datetime_str = f"{date} {time_str}"
+                    datetime_str = f"{date_str} {time_str}"
                     temp_c = venue_weather[s].get(datetime_str, 20.0)
                 else:
                     temp_c = 20.0
                 
                 wbgt_estimated = temp_c
                 excess_wbgt = max(0.0, wbgt_estimated - 28.0)
-                kpi_costs[(date, time_str, s)] = excess_wbgt * 2.0 
+                kpi_costs[(date_str, time_str, s)] = excess_wbgt * 2.0 
                 
         return kpi_costs
 
@@ -128,6 +150,15 @@ class ScheduleOptimizer:
         model.G = Set(initialize=list(self.G))  # Groups
         model.M_i = Set(model.I, ordered=False, initialize=lambda m, i: self.M_i[i])  # Matches per team
         model.T_s = Set(model.S, ordered=False, initialize=lambda m, s: self.T_s[s])  # Valid time slots per stadium
+        
+        # top_k = int(len(self.S) * (len(self.S) - 1) / 2 * 0.5)  # Top 50% of stadium pairs
+        # self.top_20_dist_pairs = [
+        #                     k for k, v in sorted(
+        #                         self.params["dist_v_v"].items(),
+        #                         key=lambda x: x[1],
+        #                         reverse=True
+        #                     )[:top_k]
+        #                 ]
         model.ISS = Set(
                     dimen=3,
                     initialize=lambda m: (
@@ -135,14 +166,22 @@ class ScheduleOptimizer:
                         for i in m.I
                         for s1 in m.S
                         for s2 in m.S
-                    )
-                )
+                        if s1 < s2  # Avoid duplicates and self-pairs)
+                ))
         model.IS = Set(
                     dimen=2,
                     initialize=lambda m: (
                         (i, s1)
                         for i in m.I
                         for s1 in m.S
+                    )
+                )
+        model.TS = Set(
+                    dimen=3,
+                    initialize=lambda m: (
+                        (t, s)
+                        for s in m.S
+                        for t in m.T_s[s]
                     )
                 )
                     
@@ -154,10 +193,9 @@ class ScheduleOptimizer:
         # Precompute KPI coefficients for each (match, time_slot, stadium) for KPI 1.7 and 2.2
         kpi_coefficients = self._compute_kpi_coefficients()
         model.kpi_cost = Param(
-            model.T,
-            model.S,
+            model.TS,
             initialize={(t, s): kpi_coefficients[(t[0], t[1], s)]
-                        for t in model.T for s in model.S},
+                        for s in model.S for t in model.T_s[s]},
         )
 
         city_stadiums = {}  # city -> list of stadiums in that city
@@ -173,7 +211,7 @@ class ScheduleOptimizer:
         ################################################################################## Vars
 
         # Decision Variables
-        model.x = Var(model.M, model.T, model.S, within=Binary)  # Assignment vars
+        model.x = Var(model.M, model.TS, within=Binary)  # Assignment vars
         model.y = Var(model.G, model.T, within=Binary)  # Final slot indicator
 
         # ===== AUXILIARY VARIABLES FOR INTER-STADIUM METRICS =====
@@ -184,9 +222,10 @@ class ScheduleOptimizer:
         model.stadium_i_s = Var(model.IS, within=Binary)
         # Binary transition indicators for inter-stadium costs
         # For team i between match positions k and k', is it playing at (s1, s2)?
-        model.transition_i_s1_s2 = Var(model.ISS, within=Binary)
+        model.transition_i_s1_s2 = Var(model.ISS, within=NonNegativeReals)  # Relaxed to continuous for better LP relaxation
         # Continuous travel distance for each team (KPI 1.2)
         # model.travel_distance_i = Var(model.I, within=NonNegativeReals)
+        model.max_d = Var(within=NonNegativeReals)  # Max travel distance across teams (for KPI 1.2)
         
         # ===== AUXILIARY VARIABLES FOR OTHER KPIS =====
         model.d_s = Var(model.S, within=NonNegativeReals)  # KPI 4.1: Venue load deviation
@@ -201,23 +240,30 @@ class ScheduleOptimizer:
         model.stadium_schedule_link = ConstraintList()
         for i in model.I:
             for s in model.S:
-                model.stadium_schedule_link.add(3*model.stadium_i_s[i, s] >= sum(model.x[k, t, s] for k in model.M_i[i] for t in model.T))
+                model.stadium_schedule_link.add(3*model.stadium_i_s[i, s] >= sum(model.x[m, t, s] for m in model.M_i[i] for t in model.T_s[s]))
     
         # C4: Transition must match stadium assignments
-        # transition_i_s1_s2 = 1 only if stadium_i_k[i, k1, s1] = 1 AND stadium_i_k[i, k2, s2] = 1
+        # transition_i_s1_s2 = 1 only if BOTH stadium_i_s[i, s1] = 1 AND stadium_i_s[i, s2] = 1
         model.transition_link = ConstraintList()
         for i in model.I:
             for s1 in model.S:
                 for s2 in model.S:
-                    model.transition_link.add(model.stadium_i_s[i, s1] + model.stadium_i_s[i, s2] <= 1+model.transition_i_s1_s2[i, s1, s2])
+                    if s1 < s2:  # Only define for s1 < s2 to avoid duplicates
+                        model.transition_link.add(model.transition_i_s1_s2[i, s1, s2] >= model.stadium_i_s[i, s1] + model.stadium_i_s[i, s2] - 1)
         
+        model.max_travel_distance = ConstraintList()
+        dist_dict = self.params["dist_v_v"]
+        for i in model.I:
+            model.max_travel_distance.add(2 * sum(model.transition_i_s1_s2[i, s1, s2]*dist_dict[s1, s2] for s1 in model.S for s2 in model.S if s1 < s2)
+             <= model.max_d)
+
         # ---------------------------------------------------------------------------------------
 
         # KPI 4.1: Venue-Load Balance
         # venue_count[s] = sum of matches at stadium s
         # d_s >= venue_count[s] - mean_count and d_s >= mean_count - venue_count[s]
         def venue_count_constraint(model, s):
-            return model.venue_count[s] == sum(model.x[m, t, s] for m in model.M for t in model.T)
+            return model.venue_count[s] == sum(model.x[m, t, s] for m in model.M for t in model.T_s[s])
 
         mean_venue_count = len(model.M) / len(model.S)
         
@@ -235,15 +281,9 @@ class ScheduleOptimizer:
 
         # Hard Constraints
 
-        # H0: each stadium has specific valid times
-        # def h0_rule(model, s):
-        #     return sum(model.x[m, t, s] for m in model.M for t in model.T if t not in model.T_s[s]) == 0
-            
-        # model.h0 = Constraint(model.S, rule=h0_rule, doc="H0: Stadium availability")
-
         # H1-1: Each match scheduled exactly once
         def h1_rule(model, m):
-            return sum(model.x[m, t, s] for s in model.S for t in model.T) == 1
+            return sum(model.x[m, t, s] for s in model.S for t in model.T_s[s]) == 1
 
         model.h1 = Constraint(model.M, rule=h1_rule, doc="H1: Each match once")
 
@@ -254,8 +294,8 @@ class ScheduleOptimizer:
                 sum(
                     model.x[m, t, s]
                     for m in team_matches
-                    for t in model.T
                     for s in model.S
+                    for t in model.T_s[s]
                 )
                 == 3
             )
@@ -263,26 +303,26 @@ class ScheduleOptimizer:
         model.h2 = Constraint(model.I, rule=h2_rule, doc="H2: Round-robin")
 
         # H4: stadium turnover
-        def h4_rule(model, s, date):
-            return (sum(model.x[m, t_prime, s] for m in model.M for t_prime in model.T if t_prime[0] == date) <= 1)
-        
-        model.h4 = Constraint(model.S, [t[0] for t in model.T], rule=h4_rule, doc="H4: Stadium turnover")
+        model.h4 = ConstraintList()
+        for s in model.S:
+            for date1 in set([t[0] for t in model.T_s[s]]):
+                model.h4.add(sum(model.x[m, t_prime, s] for m in model.M for t_prime in model.T_s[s] if t_prime[0] == date1) <= 1)
+
         
         # H5: minimum team rest
         model.H5 = ConstraintList()
-        time_window = self.params["R_min"] + self.params["match_duration"]
         for i in model.I:
             for date1 in set([t[0] for t in model.T]):
                 d1 = date.fromisoformat(date1)
                 all_3_days = [
-                    (d1 + timedelta(days=i)).isoformat()
-                    for i in range(4)
+                    (d1 + timedelta(days=di)).isoformat()
+                    for di in range(4)
                 ]
-                model.H5.add(sum(model.x[m1, t, s] for m1 in model.M_i[i] for s in model.S for t in model.T if t[0] in all_3_days) <= 1)
+                model.H5.add(sum(model.x[m1, t, s] for s in model.S for m1 in model.M_i[i] for t in model.T_s[s] if t[0] in all_3_days) <= 1)
         
         # H6: host-nation matches in their country
         def h6_rule(model, team):
-            return sum(model.x[m, t, s] for m in model.M for t in model.T for s in model.S if m in model.M_i[team] and s not in self.S_c[team]) == 0  # Ensure variables are created
+            return sum(model.x[m, t, s] for m in model.M for s in model.S for t in model.T_s[s] if m in model.M_i[team] and s not in self.S_c[team]) == 0  # Ensure variables are created
             
         model.h6 = Constraint(["USA", "MEX", "CAN"], rule=h6_rule, doc="H6: Host nation matches")
         
@@ -292,11 +332,11 @@ class ScheduleOptimizer:
 
         model.h7a = Constraint(model.G, rule=h7a_rule, doc="H7a: Final slot chosen")
         
-        def h7b_rule(model, g, date, time):
-            t = (date, time)
+        def h7b_rule(model, g, date1, time1):
+            t = (date1, time1)
             group_matches = list(self.M_g[g])
             return (
-                sum(model.x[m, t, s] for m in group_matches for s in model.S)
+                sum(model.x[m, t, s] for m in group_matches for s in model.S if t in model.T_s[s])
                 >= 2 * model.y[g, t]
             )
 
@@ -304,12 +344,12 @@ class ScheduleOptimizer:
             model.G, model.T, rule=h7b_rule, doc="H7b: Final matches in slot"
         )
 
-        def h7c_rule(model, g, date, time):
+        def h7c_rule(model, g, date1, time1):
             group_matches = list(self.M_g[g])
 
             return (
-                sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in model.T if t_prime[0] > date or (t_prime[0] == date and t_prime[1] > time))
-                <= 6 * (1 - model.y[g, (date, time)])
+                sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in model.T_s[s] if t_prime[0] > date1 or (t_prime[0] == date1 and t_prime[1] > time1))
+                <= 6 * (1 - model.y[g, (date1, time1)])
             )
         model.h7c = Constraint(
             model.G, model.T, rule=h7c_rule, doc="H7c: Final matches not after final slot"
@@ -328,13 +368,14 @@ class ScheduleOptimizer:
                 sum(
                     model.x[m, t, s]
                     for m in model.M
-                    for t in model.T
                     for s in country_stadiums
+                    for t in model.T_s[s]
                 )
                 == model.N_c[c]
             )
 
         model.h8 = Constraint(["USA", "MEX", "CAN"], rule=h8_rule, doc="H8: Country allocation")
+        
         
         ############################################################### Obj
 
@@ -342,6 +383,7 @@ class ScheduleOptimizer:
         # Direct KPIs (1.7, 2.2) via precomputed coefficients
         # + Inter-stadium KPIs (1.2) via auxiliary constraints
         # + Auxiliary variable KPIs (4.1)
+        # + Geographic clustering penalty (NEW)
         def objective_rule(model):
             weights = self.params["weights"]
             norm_factors = self.kpi_normalization_factors
@@ -350,35 +392,31 @@ class ScheduleOptimizer:
             cost2_2 = sum(
                 model.kpi_cost[t, s] * model.x[m, t, s]
                 for m in model.M
-                for t in model.T
                 for s in model.S
+                for t in model.T_s[s]
             )
-            cost_3_1 = sum(1-model.y[g, t] for g in model.G for t in model.T)
-            
             kpi_2_2_normalized = cost2_2 / norm_factors["kpi_2_2"]
-            # kpi_3_1_normalized = cost_3_1 / norm_factors["kpi_3_1"]
             
             # # KPI 1.2: Travel distance (sum of inter-stadium distances)
             dist_dict = self.params["dist_v_v"]
-            kpi_1_2 = sum(model.transition_i_s1_s2[i, s1, s2]*dist_dict[s1, s2] for i in model.I for s1 in model.S for s2 in model.S)
-            kpi_1_2_normalized = kpi_1_2 / norm_factors["kpi_1_2"]
+            sum_travel = sum(model.transition_i_s1_s2[i, s1, s2]*dist_dict[s1, s2] for i in model.I for s1 in model.S for s2 in model.S if s1 < s2)
+            kpi_1_2_normalized = 0.85 * (sum_travel / norm_factors["kpi_1_2"]["sum"]) + 0.15 * (model.max_d / norm_factors["kpi_1_2"]["max"])
             
             # # KPI 4.1: Venue-load balance (mean absolute deviation of match counts)
             kpi_4_1 = sum(model.d_s[s] for s in model.S)
-            kpi_4_1_normalized = kpi_4_1 / norm_factors.get("kpi_4_1", 1.0)
+            kpi_4_1_normalized = kpi_4_1 / norm_factors["kpi_4_1"]
             
            # Combine all normalized KPIs
             return (weights["kpi_2_2"] * kpi_2_2_normalized+
-                    # weights["kpi_1_2"] * kpi_1_2_normalized+
-                    # weights["kpi_3_1"] * kpi_3_1_normalized+
+                    weights["kpi_1_2"] * kpi_1_2_normalized+
                     weights["kpi_4_1"] * kpi_4_1_normalized)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
 
         self.model = model
         return model
-
-    def solve(self, time_limit: int = 300, solver_name: str = "glpk") -> Dict:
+    
+    def solve(self, time_limit: int = 300, solver_name: str = "gurobi", warmstart: bool = True) -> Dict:
         """
         Solve the schedule optimization problem.
         Args:
@@ -412,15 +450,20 @@ class ScheduleOptimizer:
         elif used_solver == "glpk":
             solver.options["tmlim"] = time_limit
         elif used_solver == "gurobi":
-            solver.options["TimeLimit"] = time_limit
-        
-        result = solver.solve(self.model, tee=True)
+            solver.options["TimeLimit"]    = time_limit
+            solver.options["MIPFocus"]     = 1      # prioritize finding/improving incumbents
+            solver.options["Heuristics"]   = 0.5
+            solver.options["ImproveStartTime"] = 60 # after 60s, stop caring about the bound entirely
+            solver.options["Threads"]      = 8
+
+        supports_ws = warmstart and used_solver in ("gurobi", "cbc")
+        result = solver.solve(self.model, tee=True, warmstart=supports_ws)
 
         # Extract solution
         schedule = {}
         for m in self.model.M:
-            for t in self.model.T:
-                for s in self.model.S:
+            for s in self.model.S:
+                for t in self.model.T_s[s]:
                     if value(self.model.x[m, t, s]) > 0.5:
                         # get local time
                         v_offset = int(self.venues[self.venues['venue_id'] == s]['utc_offset_june'].iloc[0])
@@ -430,8 +473,8 @@ class ScheduleOptimizer:
 
         schedule_DF = []
         for m in self.model.M:
-            for t in self.model.T:
-                for s in self.model.S:
+            for s in self.model.S:
+                for t in self.model.T_s[s]:
                     if value(self.model.x[m, t, s]) > 0.5:
                         v_offset = int(self.venues[self.venues['venue_id'] == s]['utc_offset_june'].iloc[0])
                         t_prime = pd.to_datetime(f"{t[0]} {t[1]}") + pd.Timedelta(hours=v_offset)

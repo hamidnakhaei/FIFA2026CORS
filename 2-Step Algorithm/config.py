@@ -7,10 +7,10 @@ class config_params:
     def __init__(self):
 
         # KPI Weights (from Algorithm.tex - 13 selected KPIs)
+        # NOTE: Travel weight increased to 15.0 from 6.0 to prioritize geographic clustering
         self.KPI_WEIGHTS = {
-            "kpi_1_2": 3.00,   # Travel distance
-            "kpi_2_2": 2.00,   # Heat Load
-            "kpi_3_1": 10.00,   # Heat Load
+            "kpi_1_2": 15.00,  # Travel distance (increased from 6.0 to reduce scattering)
+            "kpi_2_2": 1.50,   # Heat Load
             "kpi_4_1": 1.00,   # Venue-Load Balance
         }
 
@@ -42,7 +42,7 @@ class config_params:
         self.DEFAULT_MAX_OUTER_ITERATIONS = 5
 
         # Solver settings
-        self.DEFAULT_SOLVER = "glpk"  # Options: glpk, gurobi, cbc
+        self.DEFAULT_SOLVER = "gurobi"  # Options: glpk, gurobi, cbc
         self.SOLVER_OPTIONS = {
             "glpk": {"tmlim": 300},
             "gurobi": {"TimeLimit": 300, "Threads": 4},

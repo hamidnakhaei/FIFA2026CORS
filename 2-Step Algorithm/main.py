@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict
 from data_loader import DataLoader
 from schedule_optimizer import ScheduleOptimizer
-from base_camp_optimizer import BaseCampOptimizer, load_base_camp_assignment_from_data
+from base_camp_optimizer import BaseCampOptimizer
 
 
 class TwoStepOptimizer:
@@ -36,13 +36,7 @@ class TwoStepOptimizer:
         self.best_solution = None
         self.iteration_history = []
 
-    def get_initial_base_camp_assignment(self) -> Dict:
-        """Load initial base camp assignment from CSV data (confirmed assignments)."""
-        base_camps = self.loader.get_base_camps()
-        assignment = load_base_camp_assignment_from_data(base_camps)
-        return assignment
-
-    def run_step_a(self, time_limit: int = 600) -> Dict:
+    def run_step_a(self, time_limit: int = 300) -> Dict:
         """
         Step A: Optimize schedule
         Args:

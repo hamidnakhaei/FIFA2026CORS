@@ -225,18 +225,3 @@ class BaseCampOptimizer:
             "status": str(result.solver.status),
             "solver": used,
         }
-
-
-def load_base_camp_assignment_from_data(base_camps_df: pd.DataFrame) -> Dict:
-    """
-    Load current base camp assignments from base_camps.csv.
-    Returns dict mapping team_id -> base_camp_id for assigned teams.
-    Only includes teams with confirmed assignments (team_id not null).
-    """
-    assignment = {}
-    assigned = base_camps_df[base_camps_df["team_id"].notna()]
-    for _, row in assigned.iterrows():
-        team_id = row["team_id"]
-        base_camp_id = row["base_camp_id"]
-        assignment[team_id] = base_camp_id
-    return assignment
