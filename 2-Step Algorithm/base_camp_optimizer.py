@@ -122,7 +122,7 @@ class BaseCampOptimizer:
                 continue
             d = self.params["dist"].get((base_camp_id, stadium_id), 0.0)
             total += 2.0 * d  # out-and-back round trip
-        if team_id in self.bond_teams and base_camp_id in self.us_facilities:
+        if (team_id in self.bond_teams or team_id in self.ban_teams) and base_camp_id in self.us_facilities:
             total += self.bond_penalty_km
         return total
 
