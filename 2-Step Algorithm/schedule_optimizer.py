@@ -306,8 +306,6 @@ class ScheduleOptimizer:
         # Constraints: delta_m >= r_im[a] - r_im[b] and delta_m >= r_im[b] - r_im[a]
         def rest_asymmetry_constraint_1(model, m):
             match_row = self.matches[self.matches["match_id"] == m]
-            if len(match_row) == 0:
-                return Constraint.Skip
             match = match_row.iloc[0]
             team_a = match["team_a_id"]
             team_b = match["team_b_id"]
@@ -315,8 +313,6 @@ class ScheduleOptimizer:
 
         def rest_asymmetry_constraint_2(model, m):
             match_row = self.matches[self.matches["match_id"] == m]
-            if len(match_row) == 0:
-                return Constraint.Skip
             match = match_row.iloc[0]
             team_a = match["team_a_id"]
             team_b = match["team_b_id"]
@@ -331,48 +327,32 @@ class ScheduleOptimizer:
         match_duration = self.params["match_duration"]
         big_m = 7 * 24  # Max 7 days between group stage matches
         
-        rest_constraint_idx = 0
-        rest_constraints = {}
+        model.rest_constraints = ConstraintList()  # To store rest constraints before adding to model
         
         for i in model.I:
-            team_matches = list(model.M_i[i])
+            team_matches_pairs = [(m_prev, m) for m_prev in model.M_i[i] for m in model.M_i[i] if m_prev != m]
             # For each pair of matches this team plays
-            for m_prev in team_matches:
-                for m in team_matches:
-                    if m_prev == m:
-                        continue
-                    
-                    # For each pair of time slots
-                    for t_prev in model.T:
-                        for s_prev in model.S:
-                            for t in model.T:
-                                for s in model.S:
-                                    # Compute time difference
-                                    try:
-                                        date_prev, time_prev = self.slot_index_to_datetime[t_prev]
-                                        date_curr, time_curr = self.slot_index_to_datetime[t]
-                                        
-                                        dt_prev = datetime.strptime(f"{date_prev} {time_prev}", "%Y-%m-%d %H:%M")
-                                        dt_curr = datetime.strptime(f"{date_curr} {time_curr}", "%Y-%m-%d %H:%M")
-                                        time_diff_hours = (dt_curr - dt_prev).total_seconds() / 3600.0
-                                        rest_hours = time_diff_hours - match_duration
-                                        
-                                        # Only for positive rest (m is after m_prev)
-                                        if rest_hours > 0:
-                                            rest_constraint_idx += 1
-                                            constraint_key = (i, m, rest_constraint_idx)
-                                            rest_constraints[constraint_key] = (
-                                                model.r_im[i, m] + 
-                                                big_m * (2 - model.x[m_prev, t_prev, s_prev] - model.x[m, t, s])
-                                                >= rest_hours
-                                            )
-                                    except:
-                                        continue
-        
-        # Add all rest constraints to model
-        for idx, (key, constraint_expr) in enumerate(rest_constraints.items()):
-            setattr(model, f"h_kpi_rest_{idx}", Constraint(expr=constraint_expr))
-
+            for m_prev, m in team_matches_pairs:    
+                for s in model.S:
+                    for s_prev in model.S:            
+                        # For each pair of time slots
+                        for t_prev in model.T_s[s_prev]:
+                            for t in model.T_s[s]:
+                                # Compute time difference
+                                date_prev, time_prev = self.slot_index_to_datetime[t_prev]
+                                date_curr, time_curr = self.slot_index_to_datetime[t]
+                                
+                                dt_prev = datetime.strptime(f"{date_prev} {time_prev}", "%Y-%m-%d %H:%M")
+                                dt_curr = datetime.strptime(f"{date_curr} {time_curr}", "%Y-%m-%d %H:%M")
+                                time_diff_hours = (dt_curr - dt_prev).total_seconds() / 3600.0
+                                rest_hours = time_diff_hours - match_duration
+                                
+                                # Only for positive rest (m is after m_prev)
+                                if rest_hours > 72:  # Less than 3 days rest is not relevant for asymmetry
+                                    model.rest_constraints.add(
+                                        model.r_im[i, m] + 
+                                        big_m * (2 - model.x[m_prev, t_prev, s_prev] - model.x[m, t, s])
+                                        >= rest_hours)
 
         # =====================================================================================
 
