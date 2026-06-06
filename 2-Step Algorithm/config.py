@@ -9,9 +9,9 @@ class config_params:
         # KPI Weights (from Algorithm.tex - 13 selected KPIs)
         # NOTE: Travel weight increased to 15.0 from 6.0 to prioritize geographic clustering
         self.KPI_WEIGHTS = {
-            "kpi_1_2": 10.00,  # Travel distance (increased from 6.0 to reduce scattering)
+            "kpi_1_2": 15.00,  # Travel distance (increased from 6.0 to reduce scattering)
             "kpi_2_2": 5.00,   # Heat Load
-            "kpi_4_1": 2.00,   # Venue-Load Balance
+            "kpi_4_1": 5.00,   # Venue-Load Balance
         }
 
         # Hard constraints constants

@@ -36,7 +36,7 @@ class TwoStepOptimizer:
         self.best_solution = None
         self.iteration_history = []
 
-    def run_step_a(self, time_limit: int = 300) -> Dict:
+    def run_step_a(self, time_limit: int = 600) -> Dict:
         """
         Step A: Optimize schedule
         Args:
