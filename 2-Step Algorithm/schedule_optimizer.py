@@ -5,6 +5,7 @@ Solves the MILP to assign matches to slots and stadiums, minimizing weighted KPI
 
 from collections import Counter
 from datetime import date, timedelta, datetime
+import numpy as np
 import pandas as pd
 from typing import Dict
 from pyomo.environ import (
@@ -94,12 +95,13 @@ class ScheduleOptimizer:
                     rest_before[(i, row["match_id"])] = max(0.0, hrs - md)
                 prev_dt = row["datetime"]
 
-        total = 0.0
+        max_diff = -np.inf
         for _, row in matches.iterrows():
             a = rest_before.get((row["team_a_id"], row["match_id"]), 0.0)
             b = rest_before.get((row["team_b_id"], row["match_id"]), 0.0)
-            total += abs(a - b)
-        return total
+            diff = abs(a - b)
+            max_diff = max(max_diff, diff)
+        return max_diff
 
     def _compute_kpi_normalization_factors(self) -> Dict:
         """
@@ -125,9 +127,10 @@ class ScheduleOptimizer:
         # KPI 4.1: Venue-load balance (mean absolute deviation)
         # Worst case: unbalanced distribution of 72 matches across 12 stadiums
         factors["kpi_4_1"] = max(base["venue_dev"], 0.1)
-        
-        # KPI 1.6: Rest asymmetry (sum of rest differences)
-        factors["kpi_1_6"] = max(self._baseline_rest_asymmetry(), 0.1)
+
+        # KPI 5.2: Marquee-match overlap penalty (count × popularity)
+        # Worst case: all high-profile matches in same slot
+        factors["kpi_5_2"] = len(self.M)  # Number of high-profile match pairs
                
         return factors
     
@@ -251,8 +254,9 @@ class ScheduleOptimizer:
         model.d_s = Var(model.S, within=NonNegativeReals)  # KPI 4.1: Venue load deviation
         model.venue_count = Var(model.S, within=NonNegativeIntegers)  # KPI 4.1: Number of matches per venue
         model.delta_m = Var(model.M, within=NonNegativeReals)  # KPI 1.6: Rest asymmetry per match
+        model.max_delta = Var(within=NonNegativeReals)  # Max rest asymmetry across matches (for KPI 1.6)
         model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # KPI 1.6: Rest days for team i before match m
-        
+        model.o_P_mm_prime = Var(model.M, model.M, model.T, within=NonNegativeReals)  # KPI 5.2: Marquee match overlap
         
         ################################################################################## Cons
 
@@ -300,59 +304,76 @@ class ScheduleOptimizer:
         model.h_kpi_4_1_dev_1 = Constraint(model.S, rule=venue_load_deviation_1)
         model.h_kpi_4_1_dev_2 = Constraint(model.S, rule=venue_load_deviation_2)
 
-
         # KPI 1.6: Rest Asymmetry Between Opponents
         # delta_m >= |r_im[team_a, m] - r_im[team_b, m]|
         # Constraints: delta_m >= r_im[a] - r_im[b] and delta_m >= r_im[b] - r_im[a]
-        def rest_asymmetry_constraint_1(model, m):
-            match_row = self.matches[self.matches["match_id"] == m]
-            match = match_row.iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
-            return model.delta_m[m] >= model.r_im[team_a, m] - model.r_im[team_b, m]
+        # def rest_asymmetry_constraint_1(model, m):
+        #     match_row = self.matches[self.matches["match_id"] == m]
+        #     match = match_row.iloc[0]
+        #     team_a = match["team_a_id"]
+        #     team_b = match["team_b_id"]
+        #     return 3 >= model.r_im[team_a, m] - model.r_im[team_b, m]
 
-        def rest_asymmetry_constraint_2(model, m):
-            match_row = self.matches[self.matches["match_id"] == m]
-            match = match_row.iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
-            return model.delta_m[m] >= model.r_im[team_b, m] - model.r_im[team_a, m]
+        # def rest_asymmetry_constraint_2(model, m):
+        #     match_row = self.matches[self.matches["match_id"] == m]
+        #     match = match_row.iloc[0]
+        #     team_a = match["team_a_id"]
+        #     team_b = match["team_b_id"]
+        #     return 3 >= model.r_im[team_b, m] - model.r_im[team_a, m]
 
-        model.h_kpi_1_6_a = Constraint(model.M, rule=rest_asymmetry_constraint_1)
-        model.h_kpi_1_6_b = Constraint(model.M, rule=rest_asymmetry_constraint_2)
+        # model.h_kpi_1_6_a = Constraint(model.M, rule=rest_asymmetry_constraint_1)
+        # model.h_kpi_1_6_b = Constraint(model.M, rule=rest_asymmetry_constraint_2)
 
         # Rest computation: r_im[i,m] = hours of rest before match m for team i
         # For each team and pair of their matches (m_prev, m), if m_prev happens before m:
         # r_im[i,m] >= time_between(t_prev, t) - match_duration - Big_M*(2 - x[m_prev,t_prev,s_prev] - x[m,t,s])
-        match_duration = self.params["match_duration"]
-        big_m = 7 * 24  # Max 7 days between group stage matches
+        # big_m = 30 * 24  # Max 30 days between group stage matches
         
-        model.rest_constraints = ConstraintList()  # To store rest constraints before adding to model
+        # model.rest_constraints = ConstraintList()  # To store rest constraints before adding to model
         
-        for i in model.I:
-            team_matches_pairs = [(m_prev, m) for m_prev in model.M_i[i] for m in model.M_i[i] if m_prev != m]
-            # For each pair of matches this team plays
-            for m_prev, m in team_matches_pairs:    
-                for s in model.S:
-                    for s_prev in model.S:            
-                        # For each pair of time slots
-                        for t_prev in model.T_s[s_prev]:
-                            for t in model.T_s[s]:
-                                # Compute time difference
-                                date_prev, time_prev = self.slot_index_to_datetime[t_prev]
-                                date_curr, time_curr = self.slot_index_to_datetime[t]
-                                
-                                dt_prev = datetime.strptime(f"{date_prev} {time_prev}", "%Y-%m-%d %H:%M")
-                                dt_curr = datetime.strptime(f"{date_curr} {time_curr}", "%Y-%m-%d %H:%M")
-                                time_diff_hours = (dt_curr - dt_prev).total_seconds() / 3600.0
-                                rest_hours = time_diff_hours - match_duration
-                                
-                                # Only for positive rest (m is after m_prev)
-                                if rest_hours > 72:  # Less than 3 days rest is not relevant for asymmetry
-                                    model.rest_constraints.add(
-                                        model.r_im[i, m] + 
-                                        big_m * (2 - model.x[m_prev, t_prev, s_prev] - model.x[m, t, s])
-                                        >= rest_hours)
+        # for i in model.I:
+        #     team_matches_pairs = [(m_prev, m) for m_prev in model.M_i[i] for m in model.M_i[i] if m_prev != m]
+        #     # For each pair of matches this team plays
+        #     for m_prev, m in team_matches_pairs:
+        #         # For each pair of valid (time_slot, stadium) combinations
+        #         for ts_prev in model.TS:
+        #             for ts in model.TS:
+        #                 dt_prev, t_prev, s_prev = ts_prev
+        #                 dt, t, s = ts
+        #                 # Compute time difference
+        #                 d1 = datetime.strptime(f"{dt_prev} {t_prev}", "%Y-%m-%d %H:%M")
+        #                 d2 = datetime.strptime(f"{dt} {t}", "%Y-%m-%d %H:%M")
+        #                 rest_hours = (d2 - d1).days
+
+        #                 # Only for positive rest (m is after m_prev)
+        #                 if rest_hours > 0:
+        #                     model.rest_constraints.add(
+        #                         model.r_im[i, m] >= rest_hours - big_m * (2 - model.x[m_prev, dt_prev, t_prev, s_prev] - model.x[m, dt, t, s])
+        #                     )
+        #                     model.rest_constraints.add(
+        #                         model.r_im[i, m] <= rest_hours + big_m * (2 - model.x[m_prev, dt_prev, t_prev, s_prev] - model.x[m, dt, t, s])
+        #                     )
+
+        # KPI 5.2: Marquee-Match Slot Quality with Overlap Penalty
+        # o_P_mm_prime[m, m', t] >= x[m,t,s1] + x[m',t,s2] - 1 (overlap if both in same slot)
+        def marquee_overlap_constraint(model, m1, m2, date, time):
+            t = (date, time)
+            if m1 >= m2:
+                return Constraint.Skip
+            # Penalty for two high-profile matches sharing a slot
+            mu_m1 = self.params.get("match_value", {}).get(m1, 0.5)
+            mu_m2 = self.params.get("match_value", {}).get(m2, 0.5)
+            # Only penalize if both are at top 20
+            threshold = np.quantile(list(self.params["match_value"].values()), 0.8)
+            if mu_m1 >= threshold and mu_m2 >= threshold:
+                return model.o_P_mm_prime[m1, m2, t] >= (
+                    sum(model.x[m1, t, s] for s in model.S if t in model.T_s[s]) +
+                    sum(model.x[m2, t, s] for s in model.S if t in model.T_s[s]) - 1
+                )
+            return Constraint.Skip
+
+        model.h_kpi_5_2 = Constraint(model.M, model.M, model.T, rule=marquee_overlap_constraint)
+
 
         # =====================================================================================
 
@@ -483,14 +504,14 @@ class ScheduleOptimizer:
             kpi_4_1 = sum(model.d_s[s] for s in model.S)
             kpi_4_1_normalized = kpi_4_1 / norm_factors["kpi_4_1"]
 
-            # # KPI 1.6: Rest asymmetry (sum of rest differences)
-            kpi_1_6 = sum(model.delta_m[m] for m in model.M)
-            kpi_1_6_normalized = kpi_1_6 / norm_factors["kpi_1_6"]
+            # KPI 5.2: Marquee-match overlap penalty (count × popularity)
+            kpi_5_2 = sum(model.o_P_mm_prime[m1, m2, t] for m1 in model.M for m2 in model.M for t in model.T)
+            kpi_5_2_normalized = kpi_5_2 / norm_factors["kpi_5_2"]
             
            # Combine all normalized KPIs
             return (weights["kpi_2_2"] * kpi_2_2_normalized+
                     weights["kpi_1_2"] * kpi_1_2_normalized+
-                    weights["kpi_1_6"] * kpi_1_6_normalized+
+                    weights["kpi_5_2"] * kpi_5_2_normalized+
                     weights["kpi_4_1"] * kpi_4_1_normalized)
 
         model.obj = Objective(rule=objective_rule, sense=minimize)

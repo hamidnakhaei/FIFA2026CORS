@@ -12,7 +12,7 @@ class config_params:
             "kpi_1_2": 15.00,  # Travel distance (increased from 6.0 to reduce scattering)
             "kpi_2_2": 5.00,   # Heat Load
             "kpi_4_1": 5.00,   # Venue-Load Balance
-            "kpi_1_6": 5.00,   # Rest Time
+            "kpi_5_2": 10.00,   # Rest Time
         }
 
         # Hard constraints constants
