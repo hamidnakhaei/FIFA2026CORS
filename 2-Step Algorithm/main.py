@@ -57,7 +57,6 @@ class TwoStepOptimizer:
         print(f"  ✓ Solver status: {result['status']}")
         return {"schedule": schedule, "objective_full": objective_full, "schedule_df": result["schedule_df"]}
     
-
     def run_step_b(
         self,
         schedule: Dict) -> Dict:
@@ -76,9 +75,8 @@ class TwoStepOptimizer:
 
     def export_results(
         self,
-        schedule: Dict,
         base_camp_assignment: Dict,
-        schedule_df: pd.DataFrame,
+        fifa_base_camp_opt: Dict,
         output_dir: str = ".") -> Dict:
         """
         Export optimization results in the same format as imported files.
@@ -94,7 +92,7 @@ class TwoStepOptimizer:
         Args:
             schedule: Schedule dict from Step A
             base_camp_assignment: Base camp assignment dict (team_id -> base_camp_id)
-            schedule_df: Schedule DataFrame from Step A solve result
+            fifa_schedule: FIFA schedule dict
             output_dir: Output directory for CSV files
 
         Returns:
@@ -149,11 +147,37 @@ class TwoStepOptimizer:
         base_camp_export_df.to_csv(base_camp_export_path, index=False)
         print(f"✓ Base camps exported to {base_camp_export_path}")
 
+
+        # Export Step B: Base camp assignment in base_camps.csv format (FIFA)
+        fifa_base_camp_results = []
+        for team_id, base_camp_id in fifa_base_camp_opt.items():
+            # Find base camp details from original data
+            base_camp_row = base_camps_original[
+                base_camps_original['base_camp_id'] == base_camp_id
+            ].iloc[0]
+            
+            fifa_base_camp_results.append({
+                'base_camp_id': base_camp_id,
+                'team_id': team_id,
+                'training_site': base_camp_row['training_site'],
+                'city': base_camp_row['city'],
+                'country': base_camp_row['country'],
+                'lat': base_camp_row['lat'],
+                'lon': base_camp_row['lon'],
+                'utc_offset_june': base_camp_row['utc_offset_june']
+            })
+        
+        fifa_base_camp_export_df = pd.DataFrame(fifa_base_camp_results)
+        fifa_base_camp_export_path = f"{output_dir}/fifa_base_camp_results.csv"
+        fifa_base_camp_export_df.to_csv(fifa_base_camp_export_path, index=False)
+        print(f"✓ FIFA Base camps exported to {fifa_base_camp_export_path}")
+
         return {
             'schedule_path': schedule_export_path,
             'base_camp_path': base_camp_export_path,
             'schedule_df': schedule_export_df,
-            'base_camp_df': base_camp_export_df
+            'base_camp_df': base_camp_export_df,
+            'fifa_base_camp_df': fifa_base_camp_export_df
         }
 
     def run(
@@ -170,17 +194,24 @@ class TwoStepOptimizer:
         print(f"\n---- Step A: Optimize Schedule ---")
         step_a_result = self.run_step_a()
         new_schedule = step_a_result["schedule"]
-        new_schedule_df = step_a_result["schedule_df"]
-        objective_a = step_a_result["objective_full"]
-
+        
         # Step B: Optimize base camps
         print(f"\n---- Step B: Optimize Base Camps ---")
         new_base_camp = self.run_step_b(new_schedule)
+
+        # run step b with FIFA schedule
+        fifa_schedule_csv = self.loader.get_matches()  
+        fifa_schedule = {
+            row['match_id']: ((row['date'], row['kickoff_local']), row['venue_id'])
+            for _, row in fifa_schedule_csv.iterrows()
+        }
+        fifa_base_camp_opt = self.run_step_b(fifa_schedule)
+        
         
         return {
             'schedule': new_schedule,
-            'schedule_df': new_schedule_df,
-            'base_camp_assignment': new_base_camp
+            'base_camp_assignment': new_base_camp,
+            'fifa_base_camp_opt': fifa_base_camp_opt
         }
 
 
@@ -196,10 +227,10 @@ def main():
     export_result = optimizer.export_results(
         schedule=result['schedule'],
         base_camp_assignment=result['base_camp_assignment'],
-        schedule_df=result['schedule_df'],
+        fifa_base_camp_opt=result['fifa_base_camp_opt'],  # Using FIFA base camp optimization results
         output_dir="2-Step Algorithm/outputs"
     )
-    
+
     return result, export_result
 
 

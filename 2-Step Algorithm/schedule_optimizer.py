@@ -471,21 +471,10 @@ class ScheduleOptimizer:
                         t_str = (t_prime.strftime("%Y-%m-%d"), t_prime.strftime("%H:%M"))
                         schedule[m] = (t_str, s)
 
-        schedule_DF = []
-        for m in self.model.M:
-            for s in self.model.S:
-                for t in self.model.T_s[s]:
-                    if value(self.model.x[m, t, s]) > 0.5:
-                        v_offset = int(self.venues[self.venues['venue_id'] == s]['utc_offset_june'].iloc[0])
-                        t_prime = pd.to_datetime(f"{t[0]} {t[1]}") + pd.Timedelta(hours=v_offset)
-                        t_str = (t_prime.strftime("%Y-%m-%d"), t_prime.strftime("%H:%M"))
-                        schedule_DF.append((m, t_str, s))
-
         return {
             "status": str(result.solver.status),
             "objective": value(self.model.obj),
             "schedule": schedule,
-            "schedule_df": schedule_DF,
             "model": self.model,
             "solver": used_solver,
         }
