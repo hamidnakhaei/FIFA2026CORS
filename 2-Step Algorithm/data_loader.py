@@ -135,12 +135,6 @@ class DataLoader:
             if t[0] == "2026-06-26" or t[0] == "2026-06-27":
                 for s in S:
                     T_s[s].add(t)
-        # for s in S:
-        #     for d in T_s_d[s]:
-        #         for t in T_s_t[s]:
-        #             slot = (d, t)
-        #             slots.add(slot)
-        #             T_s[s].add(slot)
 
         T = sorted(list(slots))
 
