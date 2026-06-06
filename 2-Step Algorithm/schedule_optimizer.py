@@ -422,56 +422,6 @@ class ScheduleOptimizer:
             )
 
         model.h8 = Constraint(["USA", "MEX", "CAN"], rule=h8_rule, doc="H8: Country allocation")
-
-        # H9: max 3 days difference in rest between opponents (rest asymmetry)
-        # KPI 1.6: Rest Asymmetry Between Opponents
-        # 3 >= |r_im[team_a, m] - r_im[team_b, m]|
-        # Constraints:3 >= r_im[a] - r_im[b] and 3 >= r_im[b] - r_im[a]
-        def rest_asymmetry_constraint_1(model, m):
-            match_row = self.matches[self.matches["match_id"] == m]
-            match = match_row.iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
-            return 3 >= model.r_im[team_a, m] - model.r_im[team_b, m]
-
-        def rest_asymmetry_constraint_2(model, m):
-            match_row = self.matches[self.matches["match_id"] == m]
-            match = match_row.iloc[0]
-            team_a = match["team_a_id"]
-            team_b = match["team_b_id"]
-            return 3 >= model.r_im[team_b, m] - model.r_im[team_a, m]
-
-        model.h_9_1 = Constraint(model.M, rule=rest_asymmetry_constraint_1)
-        model.h_9_2 = Constraint(model.M, rule=rest_asymmetry_constraint_2)
-
-        # Rest computation: r_im[i,m] = hours of rest before match m for team i
-        # For each team and pair of their matches (m_prev, m), if m_prev happens before m:
-        # r_im[i,m] >= time_between(t_prev, t) - match_duration - Big_M*(2 - x[m_prev,t_prev,s_prev] - x[m,t,s])
-        big_m = 30 * 24  # Max 30 days between group stage matches
-        model.h9 = ConstraintList()  # To store rest constraints before adding to model
-        for i in model.I:
-            team_matches_pairs = [(m_prev, m) for m_prev in model.M_i[i] for m in model.M_i[i] if m_prev != m]
-            # For each pair of matches this team plays
-            for m_prev, m in team_matches_pairs:
-                # For each pair of valid (time_slot, stadium) combinations
-                for ts_prev in model.TS:
-                    for ts in model.TS:
-                        dt_prev, t_prev, s_prev = ts_prev
-                        dt, t, s = ts
-                        # Compute time difference
-                        d1 = datetime.strptime(f"{dt_prev} {t_prev}", "%Y-%m-%d %H:%M")
-                        d2 = datetime.strptime(f"{dt} {t}", "%Y-%m-%d %H:%M")
-                        rest_days = (d2 - d1).days
-
-                        # Only for positive rest (m is after m_prev)
-                        if rest_days > 2:
-                            model.h9.add(
-                                model.r_im[i, m] >= rest_days - big_m * (2 - model.x[m_prev, dt_prev, t_prev, s_prev] - model.x[m, dt, t, s])
-                            )
-                            model.h9.add(
-                                model.r_im[i, m] <= rest_days + big_m * (2 - model.x[m_prev, dt_prev, t_prev, s_prev] - model.x[m, dt, t, s])
-                            )
-        
         
         ############################################################### Obj
 
