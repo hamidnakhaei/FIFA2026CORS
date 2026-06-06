@@ -326,36 +326,20 @@ class ScheduleOptimizer:
 
         # Hard Constraints
 
-        # H1-1: Each match scheduled exactly once
+        # H1: Each match scheduled exactly once
         def h1_rule(model, m):
             return sum(model.x[m, t, s] for s in model.S for t in model.T_s[s]) == 1
 
         model.h1 = Constraint(model.M, rule=h1_rule, doc="H1: Each match once")
 
-        # H2: Round-robin (each team plays 3 matches)
-        def h2_rule(model, i):
-            team_matches = list(model.M_i[i])
-            return (
-                sum(
-                    model.x[m, t, s]
-                    for m in team_matches
-                    for s in model.S
-                    for t in model.T_s[s]
-                )
-                == 3
-            )
-
-        model.h2 = Constraint(model.I, rule=h2_rule, doc="H2: Round-robin")
-
-        # H4: stadium turnover
-        model.h4 = ConstraintList()
+        # H2: stadium turnover
+        model.h2 = ConstraintList()
         for s in model.S:
             for date1 in set([t[0] for t in model.T_s[s]]):
-                model.h4.add(sum(model.x[m, t_prime, s] for m in model.M for t_prime in model.T_s[s] if t_prime[0] == date1) <= 1)
-
+                model.h2.add(sum(model.x[m, t_prime, s] for m in model.M for t_prime in model.T_s[s] if t_prime[0] == date1) <= 1)
         
-        # H5: minimum team rest
-        model.H5 = ConstraintList()
+        # H3: minimum team rest
+        model.H3 = ConstraintList()
         for i in model.I:
             for date1 in set([t[0] for t in model.T]):
                 d1 = date.fromisoformat(date1)
@@ -363,21 +347,21 @@ class ScheduleOptimizer:
                     (d1 + timedelta(days=di)).isoformat()
                     for di in range(4)
                 ]
-                model.H5.add(sum(model.x[m1, t, s] for s in model.S for m1 in model.M_i[i] for t in model.T_s[s] if t[0] in all_3_days) <= 1)
+                model.H3.add(sum(model.x[m1, t, s] for s in model.S for m1 in model.M_i[i] for t in model.T_s[s] if t[0] in all_3_days) <= 1)
         
-        # H6: host-nation matches in their country
-        def h6_rule(model, team):
+        # H4: host-nation matches in their country
+        def h4_rule(model, team):
             return sum(model.x[m, t, s] for m in model.M for s in model.S for t in model.T_s[s] if m in model.M_i[team] and s not in self.S_c[team]) == 0  # Ensure variables are created
             
-        model.h6 = Constraint(["USA", "MEX", "CAN"], rule=h6_rule, doc="H6: Host nation matches")
+        model.h4 = Constraint(["USA", "MEX", "CAN"], rule=h4_rule, doc="H4: Host nation matches")
         
-        # H7: Simultaneous final matches
-        def h7a_rule(model, g):
+        # H5: Simultaneous final matches
+        def h5a_rule(model, g):
             return sum(model.y[g, t] for t in model.T) == 1
 
-        model.h7a = Constraint(model.G, rule=h7a_rule, doc="H7a: Final slot chosen")
+        model.h5a = Constraint(model.G, rule=h5a_rule, doc="H5a: Final slot chosen")
         
-        def h7b_rule(model, g, date1, time1):
+        def h5b_rule(model, g, date1, time1):
             t = (date1, time1)
             group_matches = list(self.M_g[g])
             return (
@@ -385,23 +369,23 @@ class ScheduleOptimizer:
                 >= 2 * model.y[g, t]
             )
 
-        model.h7b = Constraint(
-            model.G, model.T, rule=h7b_rule, doc="H7b: Final matches in slot"
+        model.h5b = Constraint(
+            model.G, model.T, rule=h5b_rule, doc="H5b: Final matches in slot"
         )
 
-        def h7c_rule(model, g, date1, time1):
+        def h5c_rule(model, g, date1, time1):
             group_matches = list(self.M_g[g])
 
             return (
                 sum(model.x[m, t_prime, s] for m in group_matches for s in model.S for t_prime in model.T_s[s] if t_prime[0] > date1 or (t_prime[0] == date1 and t_prime[1] > time1))
                 <= 6 * (1 - model.y[g, (date1, time1)])
             )
-        model.h7c = Constraint(
-            model.G, model.T, rule=h7c_rule, doc="H7c: Final matches not after final slot"
+        model.h5c = Constraint(
+            model.G, model.T, rule=h5c_rule, doc="H5c: Final matches not after final slot"
         )
         
-        # H8: Match allocation by country
-        def h8_rule(model, c):
+        # H6: Match allocation by country
+        def h6_rule(model, c):
             if c == "USA":
                 country_stadiums = list(self.S_c["USA"]) 
             elif c == "MEX":
@@ -419,7 +403,7 @@ class ScheduleOptimizer:
                 == model.N_c[c]
             )
 
-        model.h8 = Constraint(["USA", "MEX", "CAN"], rule=h8_rule, doc="H8: Country allocation")
+        model.h6 = Constraint(["USA", "MEX", "CAN"], rule=h6_rule, doc="H6: Country allocation")
         
         ############################################################### Obj
 
