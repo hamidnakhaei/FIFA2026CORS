@@ -55,7 +55,7 @@ class TwoStepOptimizer:
 
         print(f"  ✓ Schedule optimization completed")
         print(f"  ✓ Solver status: {result['status']}")
-        return {"schedule": schedule, "objective_full": objective_full, "schedule_df": result["schedule_df"]}
+        return {"schedule": schedule, "objective_full": objective_full}
     
     def run_step_b(
         self,
@@ -75,6 +75,7 @@ class TwoStepOptimizer:
 
     def export_results(
         self,
+        schedule: Dict,
         base_camp_assignment: Dict,
         fifa_base_camp_opt: Dict,
         output_dir: str = ".") -> Dict:
@@ -175,7 +176,6 @@ class TwoStepOptimizer:
         return {
             'schedule_path': schedule_export_path,
             'base_camp_path': base_camp_export_path,
-            'schedule_df': schedule_export_df,
             'base_camp_df': base_camp_export_df,
             'fifa_base_camp_df': fifa_base_camp_export_df
         }
