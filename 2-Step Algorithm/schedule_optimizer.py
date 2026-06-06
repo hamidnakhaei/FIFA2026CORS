@@ -254,8 +254,6 @@ class ScheduleOptimizer:
         model.d_s = Var(model.S, within=NonNegativeReals)  # KPI 4.1: Venue load deviation
         model.venue_count = Var(model.S, within=NonNegativeIntegers)  # KPI 4.1: Number of matches per venue
         model.delta_m = Var(model.M, within=NonNegativeReals)  # KPI 1.6: Rest asymmetry per match
-        model.max_delta = Var(within=NonNegativeReals)  # Max rest asymmetry across matches (for KPI 1.6)
-        model.r_im = Var(model.I, model.M, within=NonNegativeReals)  # KPI 1.6: Rest days for team i before match m
         model.o_P_mm_prime = Var(model.M, model.M, model.T, within=NonNegativeReals)  # KPI 5.2: Marquee match overlap
         
         ################################################################################## Cons
