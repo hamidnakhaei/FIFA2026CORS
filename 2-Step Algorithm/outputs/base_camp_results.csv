@@ -1,49 +1,49 @@
 base_camp_id,team_id,training_site,city,country,lat,lon,utc_offset_june
+72,POR,The Pingry School,Bernards Township,USA,40.6201,-74.5677,-4
+64,SWE,Columbia Park Training Facility,Morristown,USA,40.797,-74.481,-4
+54,ECU,University of Dallas,Irving,USA,32.8488,-96.9226,-5
+29,QAT,Seattle Sounders FC Performance Centre,Renton,USA,47.4799,-122.2034,-7
+52,MAR,Dallas Baptist University (DBU),Dallas,USA,32.7763,-96.7969,-5
+42,ENG,Kennesaw State University,Kennesaw,USA,34.0383,-84.5831,-4
+33,CRO,Grand Park Sports Campus,Westfield,USA,42.1205,-72.7489,-4
+36,AUT,Sporting KC Training Centre,Kansas City,USA,39.1001,-94.5781,-5
+17,COL,Rutgers University,New Brunswick,USA,40.4969,-74.449,-4
+32,ARG,Houston Sports Park,Houston,USA,29.6381,-95.395,-5
+44,NED,Florida Atlantic University,Boca Raton,USA,26.3743,-80.1027,-4
+9,COD,Penn State University - Jeffrey Field,State College,USA,40.7945,-77.8616,-4
+67,GHA,Bentley University,Waltham,USA,42.3834,-71.2226,-4
+56,BRA,TCU,Fort Worth,USA,32.708,-97.3612,-5
+37,SCO,University of Kansas,Lawrence,USA,38.9535,-95.2631,-5
+59,BEL,Greenbrier Sports Performance Centre,White Sulphur Springs,USA,37.7965,-80.2976,-4
+5,KSA,Westmont College,Santa Barbara,USA,34.4504,-119.6615,-7
 35,ALG,KC Current Training Facility,Kansas City,USA,39.1001,-94.5781,-5
+55,IRN,University of North Texas,Denton,USA,33.2099,-97.1515,-5
+15,CIV,Rayados Training Centre,Monterrey,Mexico,25.6802,-100.3153,-6
+45,TUR,Boise State University,Boise,USA,43.6033,-116.1994,-6
+18,UZB,Stockton University,Galloway,USA,39.4901,-74.534,-4
+13,KOR,Centro de Alto Rendimiento (CAR),Mexico City,Mexico,19.3208,-99.1515,-6
+74,BIH,Nottawasaga Training Site,New Tecumseth,Canada,44.1542,-79.869,-4
+6,SUI,Gonzaga University,Spokane,USA,47.6671,-117.4031,-7
+24,TUN,Gardens North County District Park,Palm Beach Gardens,USA,26.8234,-80.1387,-4
 53,NOR,FC Dallas Stadium,Frisco,USA,37.7879,-122.4075,-5
-33,URU,Grand Park Sports Campus,Westfield,USA,42.1205,-72.7489,-4
-26,IRN,RPS Soccer Academy,Port St. Lucie,USA,27.2939,-80.3503,-4
-36,ARG,Sporting KC Training Centre,Kansas City,USA,39.1001,-94.5781,-5
-39,MAR,Mercer University,Macon,USA,32.8289,-83.6507,-4
-65,CRO,National Soccer Development Centre,Vancouver,Canada,49.2571,-123.2402,-7
-42,HAI,Kennesaw State University,Kennesaw,USA,34.0383,-84.5831,-4
-67,ESP,Bentley University,Waltham,USA,42.3834,-71.2226,-4
-5,FRA,Westmont College,Santa Barbara,USA,34.4504,-119.6615,-7
-6,ENG,Gonzaga University,Spokane,USA,47.6671,-117.4031,-7
-1,CUW,Episcopal High School,Alexandria,USA,38.8262,-77.0984,-4
-61,SWE,Academia Atlas FC,Guadalajara,Mexico,20.672,-103.3384,-6
-69,CPV,Bryant University,Smithfield,USA,41.9221,-71.5372,-4
-2,SCO,Atlanta United Training Centre,Atlanta,USA,33.7545,-84.3898,-4
-62,JPN,Chivas Verde Valle,Guadalajara,Mexico,20.672,-103.3384,-6
-15,CZE,Rayados Training Centre,Monterrey,Mexico,25.6802,-100.3153,-6
-74,CAN,Nottawasaga Training Site,New Tecumseth,Canada,44.1542,-79.869,-4
-64,KSA,Columbia Park Training Facility,Morristown,USA,40.797,-74.481,-4
-52,COD,Dallas Baptist University (DBU),Dallas,USA,32.7763,-96.7969,-5
-28,MEX,La Loma Centro Deportivo Queretaro,Queretaro,Mexico,20.8052,-99.8837,-6
-27,GHA,University of Portland,Portland,USA,45.5737,-122.7283,-7
-41,QAT,Oakland University,Rochester Hills,USA,42.6666,-83.2066,-4
-32,COL,Houston Sports Park,Houston,USA,29.6381,-95.395,-5
-57,BIH,Mansfield Multipurpose Stadium,Mansfield,USA,40.7584,-82.5154,-5
-54,UZB,University of Dallas,Irving,USA,32.8488,-96.9226,-5
-29,PAN,Seattle Sounders FC Performance Centre,Renton,USA,47.4799,-122.2034,-7
-13,NED,Centro de Alto Rendimiento (CAR),Mexico City,Mexico,19.3208,-99.1515,-6
-34,SEN,Great Park Sports Complex,Irvine,USA,33.6719,-117.7412,-7
-73,PAR,University of San Diego - Torero Stadium,San Diego,USA,32.7174,-117.1628,-7
-4,AUS,UC Santa Barbara - Harder Stadium,Santa Barbara,USA,34.4221,-119.7027,-7
-75,TUR,Spartan Soccer Complex,San Jose,USA,37.3203,-121.8667,-7
-44,NZL,Florida Atlantic University,Boca Raton,USA,26.3743,-80.1027,-4
-55,AUT,University of North Texas,Denton,USA,33.2099,-97.1515,-5
-17,BRA,Rutgers University,New Brunswick,USA,40.4969,-74.449,-4
-72,BEL,The Pingry School,Bernards Township,USA,40.6201,-74.5677,-4
-24,EGY,Gardens North County District Park,Palm Beach Gardens,USA,26.8234,-80.1387,-4
+34,IRQ,Great Park Sports Complex,Irvine,USA,33.6719,-117.7412,-7
+22,CZE,CF Pachuca - Estadio Hidalgo,Pachuca,Mexico,20.1165,-98.7414,-6
 66,JOR,Swope Soccer Village,Kansas City,USA,39.011,-94.5194,-5
-18,CIV,Stockton University,Galloway,USA,39.4901,-74.534,-4
-25,GER,Philadelphia Union Training Facility,Chester,USA,39.9829,-75.7652,-4
-9,SUI,Penn State University - Jeffrey Field,State College,USA,40.7945,-77.8616,-4
-14,TUN,La Nueva Casa del Futbol,Toluca,Mexico,19.2925,-99.6569,-6
-47,ECU,Baylor School,Chattanooga,USA,35.0875,-85.3372,-4
-56,POR,TCU,Fort Worth,USA,32.708,-97.3612,-5
-78,IRQ,SDJA,San Diego,USA,32.7174,-117.1628,-7
-63,USA,Oakland Roots/Soul Training Facility,Oakland,USA,37.8045,-122.2714,-7
-3,KOR,San Antonio Stadium,San Antonio,USA,29.4092,-98.6018,-5
-76,RSA,Austin FC Stadium,Austin,USA,30.2711,-97.7437,-5
+3,AUS,San Antonio Stadium,San Antonio,USA,29.4092,-98.6018,-5
+14,MEX,La Nueva Casa del Futbol,Toluca,Mexico,19.2925,-99.6569,-6
+2,CUW,Atlanta United Training Centre,Atlanta,USA,33.7545,-84.3898,-4
+70,SEN,Centro Xoloitzcuintle,Tijuana,Mexico,32.5317,-117.0195,-7
+27,FRA,University of Portland,Portland,USA,45.5737,-122.7283,-7
+65,CAN,National Soccer Development Centre,Vancouver,Canada,49.2571,-123.2402,-7
+61,RSA,Academia Atlas FC,Guadalajara,Mexico,20.672,-103.3384,-6
+76,GER,Austin FC Stadium,Austin,USA,30.2711,-97.7437,-5
+26,JPN,RPS Soccer Academy,Port St. Lucie,USA,27.2939,-80.3503,-4
+43,HAI,Birmingham Legion FC Training Facility,Birmingham,USA,33.5207,-86.8024,-5
+49,USA,US Air Force Academy,Colorado Springs,USA,38.834,-104.8253,-6
+30,PAR,RSL Stadium,Sandy,USA,40.571,-111.8954,-6
+1,EGY,Episcopal High School,Alexandria,USA,38.8262,-77.0984,-4
+63,ESP,Oakland Roots/Soul Training Facility,Oakland,USA,37.8045,-122.2714,-7
+69,PAN,Bryant University,Smithfield,USA,41.9221,-71.5372,-4
+25,NZL,Philadelphia Union Training Facility,Chester,USA,39.9829,-75.7652,-4
+75,URU,Spartan Soccer Complex,San Jose,USA,37.3203,-121.8667,-7
+4,CPV,UC Santa Barbara - Harder Stadium,Santa Barbara,USA,34.4221,-119.7027,-7
